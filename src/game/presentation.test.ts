@@ -1,0 +1,95 @@
+import type { GameEvent } from './types'
+import { describe, expect, it } from 'vitest'
+import { createInitialGame, recommendDingque } from './core'
+import { executeCommand } from './engine'
+import { buildEventTimeline, buildGameReview, buildSettlementSummary, formatGameEvent } from './presentation'
+
+function transfer(sequence: number, from: 0 | 1 | 2 | 3, to: 0 | 1 | 2 | 3, amount: number, reason: Extract<GameEvent, { type: 'score_transferred' }>['reason']): Extract<GameEvent, { type: 'score_transferred' }> {
+  return { sequence, type: 'score_transferred', from, to, amount, reason, sourceEventSequence: sequence }
+}
+
+describe('结算页投影', () => {
+  it('按最终分数生成稳定排名并按终局开始事件分段流水', () => {
+    const state = createInitialGame(9)
+    state.phase = 'finished'
+    state.endReason = 'wall_empty'
+    state.players[0].score = 5
+    state.players[1].score = 5
+    state.players[2].score = -2
+    state.players[3].score = -8
+    state.events = [
+      transfer(1, 2, 0, 2, 'kong'),
+      { sequence: 2, type: 'final_settlement_started' },
+      transfer(3, 3, 1, 4, 'ready_compensation'),
+      { sequence: 4, type: 'final_settlement_completed' },
+      { sequence: 5, type: 'game_finished', reason: 'wall_empty' },
+    ]
+
+    const summary = buildSettlementSummary(state)
+    expect(summary.players.map(player => player.rank)).toEqual([1, 2, 3, 4])
+    expect(summary.instantTransfers.map(event => event.sequence)).toEqual([1])
+    expect(summary.finalTransfers.map(event => event.sequence)).toEqual([3])
+    expect(summary.readyTransfers.map(event => event.sequence)).toEqual([3])
+    expect(summary.readyTransfers[0]).toMatchObject({ from: 3, to: 1, amount: 4 })
+    expect(summary.endReason).toContain('牌墙')
+  })
+
+  it('生成关键事件和完整事件时间线且不修改原事件', () => {
+    const state = createInitialGame(11)
+    const tile = state.players[0].hand[0]
+    state.events = [
+      { sequence: 1, type: 'dingque_selected', playerId: 0, tileType: '万' },
+      { sequence: 2, type: 'tile_drawn', playerId: 1, tile, replacement: true, lastTile: false },
+      { sequence: 3, type: 'response_chosen', playerId: 2, choice: { type: 'gang' } },
+      { sequence: 4, type: 'tile_discarded', playerId: 0, tile },
+      { sequence: 5, type: 'response_settled', outcome: 'robbedKong', actors: [1] },
+      { sequence: 6, type: 'game_finished', reason: 'three_winners' },
+    ]
+    const events = structuredClone(state.events)
+
+    expect(buildEventTimeline(state).map(item => item.sequence)).toEqual([1, 4, 6])
+    expect(buildEventTimeline(state, true)).toHaveLength(state.events.length)
+    expect(buildEventTimeline(state, true).map(item => item.sequence)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(formatGameEvent(state.events[1])).toContain('杠后补张')
+    expect(formatGameEvent(state.events[2])).toBe('沉舟选择杠')
+    expect(formatGameEvent(state.events[4])).toBe('抢杠胡成立')
+    expect(formatGameEvent(state.events[5])).toContain('三家已胡')
+    expect(state.events).toEqual(events)
+  })
+
+  it('基于命令检查点生成不使用未来信息的关键决策复盘', () => {
+    const initial = createInitialGame(960)
+    const recommended = recommendDingque(initial.players[0].hand)
+    const result = executeCommand(initial, { type: 'dingque', playerId: 0, tileType: recommended })
+    if (!result.ok)
+      throw new Error(result.error)
+
+    const review = buildGameReview(result.nextState)
+    expect(review.decisions).toHaveLength(1)
+    expect(review.decisions[0]).toMatchObject({ title: '定缺选择', rating: '优秀', actual: `定缺${recommended}` })
+    expect(review.decisions[0].hand).toEqual(initial.players[0].hand)
+    expect(review.decisions[0].hand).not.toBe(initial.players[0].hand)
+  })
+
+  it('汇总点炮、三类杠次数与杠分收支', () => {
+    const state = createInitialGame(10)
+    state.phase = 'finished'
+    state.endReason = 'three_winners'
+    const tile = state.players[0].hand[0]
+    state.players[0].melds = [
+      { kind: 'mingGang', tiles: [tile, tile, tile, tile], fromPlayer: 1 },
+      { kind: 'buGang', tiles: [tile, tile, tile, tile], fromPlayer: 2 },
+      { kind: 'anGang', tiles: [tile, tile, tile, tile], fromPlayer: null },
+    ]
+    state.events = [
+      transfer(1, 1, 0, 2, 'kong'),
+      transfer(2, 0, 2, 1, 'kong'),
+      { sequence: 3, type: 'player_won', playerId: 2, info: { tile, fromPlayer: 0, kind: 'discard', fan: 1, points: 2, special: [] } },
+      { sequence: 4, type: 'final_settlement_started' },
+    ]
+
+    const player = buildSettlementSummary(state).players[0]
+    expect(player.kongCounts).toEqual({ mingGang: 1, buGang: 1, anGang: 1 })
+    expect(player).toMatchObject({ kongIncome: 2, kongExpense: 1, dealtIn: 1 })
+  })
+})
