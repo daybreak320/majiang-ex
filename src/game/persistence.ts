@@ -11,10 +11,73 @@ export interface GameSave {
   savedAt: number
 }
 
+export interface ReviewIssueSample {
+  title: string
+  actual: string
+  recommended: string
+  reason: string
+}
+
+export interface GameHistoryEntry {
+  finishedAt: number
+  seed: number
+  endReason: string
+  score: number
+  rank: number
+  hasWon: boolean
+  winFan: number | null
+  dealtIn: number
+  decisionsExcellent: number
+  decisionsReasonable: number
+  decisionsImprovable: number
+  issues: ReviewIssueSample[]
+}
+
+export const GAME_HISTORY_KEY = 'majiang-ex:game-history'
+export const GAME_HISTORY_LIMIT = 12
+
 function storage(): Storage | null {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
     return null
   return window.localStorage
+}
+
+export function recordFinishedGame(entry: GameHistoryEntry): void {
+  const store = storage()
+  if (store === null)
+    return
+  try {
+    const history = loadGameHistory()
+    history.unshift(entry)
+    store.setItem(GAME_HISTORY_KEY, JSON.stringify(history.slice(0, GAME_HISTORY_LIMIT)))
+  }
+  catch {
+    // Storage full or unavailable; analysis stays valid for this session only.
+  }
+}
+
+export function loadGameHistory(): GameHistoryEntry[] {
+  const store = storage()
+  if (store === null)
+    return []
+  try {
+    const raw = store.getItem(GAME_HISTORY_KEY)
+    if (raw === null)
+      return []
+    const value: unknown = JSON.parse(raw)
+    if (!Array.isArray(value))
+      return []
+    return value.filter((item): item is GameHistoryEntry =>
+      typeof item === 'object'
+      && item !== null
+      && typeof (item as GameHistoryEntry).finishedAt === 'number'
+      && typeof (item as GameHistoryEntry).seed === 'number'
+      && typeof (item as GameHistoryEntry).score === 'number'
+      && Array.isArray((item as GameHistoryEntry).issues))
+  }
+  catch {
+    return []
+  }
 }
 
 export function saveUnfinishedGame(state: GameState): void {

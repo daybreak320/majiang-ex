@@ -1,3 +1,4 @@
+import type { GameHistoryEntry, ReviewIssueSample } from './persistence'
 import type { GameCommand, GameEvent, GameState, MeldKind, PlayerId, ScoreReason, TileInstance } from './types'
 import { chooseAICommand, getAIReason } from './ai'
 import { createInitialGame } from './core'
@@ -267,5 +268,116 @@ export function buildSettlementSummary(state: GameState): SettlementSummary {
     instantTransfers: transfers.filter(event => event.sequence < settlementStart),
     finalTransfers: transfers.filter(event => event.sequence > settlementStart),
     readyTransfers: transfers.filter(event => event.sequence > settlementStart && event.reason === 'ready_compensation'),
+  }
+}
+
+export function buildHistoryEntry(state: GameState, review: GameReview): GameHistoryEntry {
+  const summary = buildSettlementSummary(state)
+  const self = summary.players.find(player => player.playerId === 0)
+  const issues: ReviewIssueSample[] = review.decisions
+    .filter(decision => decision.rating === '可改进')
+    .slice(0, 4)
+    .map(decision => ({
+      title: decision.title,
+      actual: decision.actual,
+      recommended: decision.recommended,
+      reason: decision.reason,
+    }))
+  const allRatings = review.decisions.map(decision => decision.rating)
+  return {
+    finishedAt: Date.now(),
+    seed: state.seed,
+    endReason: summary.endReason,
+    score: self?.score ?? 0,
+    rank: self?.rank ?? 0,
+    hasWon: self?.hasWon ?? false,
+    winFan: self?.winFan ?? null,
+    dealtIn: self?.dealtIn ?? 0,
+    decisionsExcellent: allRatings.filter(rating => rating === '优秀').length,
+    decisionsReasonable: allRatings.filter(rating => rating === '合理').length,
+    decisionsImprovable: allRatings.filter(rating => rating === '可改进').length,
+    issues,
+  }
+}
+
+export interface HistoryIssueGroup {
+  label: string
+  count: number
+  latest: ReviewIssueSample | null
+}
+
+export interface HistoryInsight {
+  gameCount: number
+  totalScore: number
+  avgRank: number
+  winCount: number
+  dealtInCount: number
+  decisionCount: number
+  excellentRate: number
+  improvableRate: number
+  latestImprovableRate: number | null
+  trendDelta: number | null
+  issueGroups: HistoryIssueGroup[]
+  advice: string[]
+}
+
+function improvableRateOf(entry: GameHistoryEntry): number | null {
+  const total = entry.decisionsExcellent + entry.decisionsReasonable + entry.decisionsImprovable
+  return total === 0 ? null : entry.decisionsImprovable / total
+}
+
+const ISSUE_ADVICE: Record<string, string> = {
+  定缺选择: '定缺前先数三门牌张数与搭子结构，缺门最少、搭子最少的一门优先缺；结算页的推荐定缺可直接对照学习。',
+  出牌决策: '出牌前先数机会数：留下两面听搭子，优先打孤张与无辐射的浮牌；2、7 万这类边张能辐射更多进张，轻易别拆。',
+  响应决策: '碰杠不是多多益善：碰牌会锁死手牌灵活度，先想清楚碰完之后听什么、机会数还剩多少再动手。',
+}
+
+export function buildHistoryInsight(entries: readonly GameHistoryEntry[]): HistoryInsight | null {
+  if (entries.length === 0)
+    return null
+  const scope = entries.slice(0, 3)
+  const decisionCount = scope.reduce((sum, entry) => sum + entry.decisionsExcellent + entry.decisionsReasonable + entry.decisionsImprovable, 0)
+  const improvable = scope.reduce((sum, entry) => sum + entry.decisionsImprovable, 0)
+  const excellent = scope.reduce((sum, entry) => sum + entry.decisionsExcellent, 0)
+  const latestRate = improvableRateOf(scope[0])
+  const earlierEntries = scope.slice(1).map(improvableRateOf).filter((rate): rate is number => rate !== null)
+  const earlierAvg = earlierEntries.length === 0 ? null : earlierEntries.reduce((sum, rate) => sum + rate, 0) / earlierEntries.length
+
+  const grouped = new Map<string, { count: number, latest: ReviewIssueSample | null }>()
+  for (const entry of scope) {
+    for (const issue of entry.issues) {
+      const current = grouped.get(issue.title) ?? { count: 0, latest: null }
+      grouped.set(issue.title, { count: current.count + 1, latest: issue })
+    }
+  }
+  const issueGroups: HistoryIssueGroup[] = [...grouped.entries()]
+    .map(([label, value]) => ({ label, count: value.count, latest: value.latest }))
+    .sort((a, b) => b.count - a.count)
+
+  const advice: string[] = []
+  for (const group of issueGroups.slice(0, 2))
+    advice.push(`${group.label}（近${scope.length}局出现 ${group.count} 次）：${ISSUE_ADVICE[group.label] ?? '对照本局复盘中的推荐打法练习同类决策。'}`)
+  if (latestRate !== null && earlierAvg !== null) {
+    if (latestRate < earlierAvg - 0.05)
+      advice.push(`趋势向好：最近一局可改进决策占比 ${Math.round(latestRate * 100)}%，比前几局平均下降了 ${Math.round((earlierAvg - latestRate) * 100)} 个百分点，保持这个节奏。`)
+    else if (latestRate > earlierAvg + 0.05)
+      advice.push(`注意波动：最近一局可改进决策占比 ${Math.round(latestRate * 100)}%，比前几局平均高出 ${Math.round((latestRate - earlierAvg) * 100)} 个百分点，建议放慢出牌节奏。`)
+  }
+  if (scope.reduce((sum, entry) => sum + entry.dealtIn, 0) >= 2)
+    advice.push('近期点炮偏多：尾盘跟住同线牌（1-4-7 / 2-5-8 / 3-6-9），对手打过的线更安全。')
+
+  return {
+    gameCount: scope.length,
+    totalScore: scope.reduce((sum, entry) => sum + entry.score, 0),
+    avgRank: scope.reduce((sum, entry) => sum + entry.rank, 0) / scope.length,
+    winCount: scope.filter(entry => entry.hasWon).length,
+    dealtInCount: scope.reduce((sum, entry) => sum + entry.dealtIn, 0),
+    decisionCount,
+    excellentRate: decisionCount === 0 ? 0 : excellent / decisionCount,
+    improvableRate: decisionCount === 0 ? 0 : improvable / decisionCount,
+    latestImprovableRate: latestRate,
+    trendDelta: latestRate !== null && earlierAvg !== null ? latestRate - earlierAvg : null,
+    issueGroups,
+    advice,
   }
 }

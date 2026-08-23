@@ -1,6 +1,8 @@
+import type { WaitShape } from '../knowledge/mahjongTheory'
 import type { Tile, TileType } from '../types'
 import { motion } from 'framer-motion'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { brokenStrongCombos, classifyWaitShape, countOpportunities, rateOpportunity } from '../knowledge/mahjongTheory'
 import { VALID_TYPES } from '../types'
 import { sortTilesByMahjongOrder } from '../utils/majiang'
 import { trackAnswer } from '../utils/tracker'
@@ -12,19 +14,45 @@ interface DiscardModeProps {
   onComplete: (score: number, time: number) => void
 }
 
-interface TileAnalysis {
+interface CandidateAnalysis {
+  tile: Tile
+  /** 打出后 13 张手牌的机会数（有效进张剩余张数总和） */
+  opportunityTotal: number
+  /** 有效进张明细 */
+  waits: Array<{ tile: Tile, remaining: number }>
+  /** 听牌形态 */
+  waitShape: WaitShape
+  /** 打出后拆散的强组合（27/28/37/38） */
+  brokeCombos: ReadonlyArray<readonly [number, number]>
+  /** 剩余手牌形状分（辅助维度） */
+  shapeScore: number
+  /** 综合推荐分：机会数主导，拆强组合重罚，形状分做次级排序 */
   score: number
-  reason: string
+  /** 理论分析理由 */
+  reasons: string[]
 }
 
-interface HandShape {
-  score: number
-  triplets: number
-  pairs: number
-  sequences: number
-  adjacentPairs: number
-  gapPairs: number
-  isolatedTiles: number
+interface HandState {
+  hand: Tile[]
+  analyses: CandidateAnalysis[]
+  best: CandidateAnalysis
+  /** 机会数并列且不额外拆强组合的候选（均视为正解） */
+  correctKeys: Set<string>
+}
+
+const WAIT_SHAPE_LABEL: Record<WaitShape, string> = {
+  single: '单吊',
+  kanchan: '间张听',
+  twoSided: '两头听',
+  threeSided: '三面听以上',
+  other: '未听牌',
+}
+
+const OPP_RATING_LABEL: Record<ReturnType<typeof rateOpportunity>, string> = {
+  excellent: '优',
+  good: '良',
+  fair: '中',
+  poor: '差',
 }
 
 function sameTile(a: Tile, b: Tile): boolean {
@@ -47,35 +75,18 @@ function removeOneTile(hand: Tile[], target: Tile): Tile[] {
   return hand.filter((_, index) => index !== targetIndex)
 }
 
-function countSameTile(hand: Tile[], target: Tile): number {
-  return hand.filter(tile => sameTile(tile, target)).length
-}
+// ---------------------------------------------------------------------------
+// 剩余手牌形状评估（辅助维度：组合/对子/搭子结构）
+// ---------------------------------------------------------------------------
 
-function hasTile(hand: Tile[], type: TileType, value: number): boolean {
-  return value >= 1 && value <= 9 && hand.some(tile => tile.type === type && tile.value === value)
-}
-
-function getTileDiscardPreference(tile: Tile, hand: Tile[]): number {
-  const sameCount = countSameTile(hand, tile)
-  const hasPrev = hasTile(hand, tile.type, tile.value - 1)
-  const hasNext = hasTile(hand, tile.type, tile.value + 1)
-  const hasGapPrev = hasTile(hand, tile.type, tile.value - 2)
-  const hasGapNext = hasTile(hand, tile.type, tile.value + 2)
-  const hasDirect = hasPrev || hasNext
-  const hasGap = hasGapPrev || hasGapNext
-
-  if (sameCount >= 3)
-    return -28
-  if (sameCount === 2)
-    return -18
-  if (hasPrev && hasNext)
-    return -14
-  if (hasDirect)
-    return -8
-  if (hasGap)
-    return -2
-
-  return tile.value === 1 || tile.value === 9 ? 16 : 12
+interface HandShape {
+  score: number
+  triplets: number
+  pairs: number
+  sequences: number
+  adjacentPairs: number
+  gapPairs: number
+  isolatedTiles: number
 }
 
 function evaluateRemainingShape(hand: Tile[]): HandShape {
@@ -142,40 +153,88 @@ function evaluateRemainingShape(hand: Tile[]): HandShape {
   }
 }
 
-function buildDiscardReason(tile: Tile, hand: Tile[], remainingShape: HandShape): string {
-  const sameCount = countSameTile(hand, tile)
-  const hasPrev = hasTile(hand, tile.type, tile.value - 1)
-  const hasNext = hasTile(hand, tile.type, tile.value + 1)
-  const hasGapPrev = hasTile(hand, tile.type, tile.value - 2)
-  const hasGapNext = hasTile(hand, tile.type, tile.value + 2)
-  const keptMelds = remainingShape.triplets + remainingShape.sequences
-  const keptWaits = remainingShape.adjacentPairs + remainingShape.gapPairs
-  const shapeSummary = `打出 ${formatTile(tile)} 后，剩下手牌可保留 ${keptMelds} 组已成型组合、${remainingShape.pairs} 组对子和 ${keptWaits} 组搭子。`
+// ---------------------------------------------------------------------------
+// 理论驱动的候选分析（朱扬《机会数理论》）
+// 机会数 = 打出后能让手牌直接听牌的有效进张剩余张数之和。
+// ---------------------------------------------------------------------------
 
-  if (sameCount === 1 && !hasPrev && !hasNext && !hasGapPrev && !hasGapNext) {
-    return `${shapeSummary}${formatTile(tile)} 没有同张、邻张或隔张联系，是当前最孤立的牌。`
+function buildReasons(tile: Tile, opportunityTotal: number, waits: CandidateAnalysis['waits'], waitShape: WaitShape, brokeCombos: ReadonlyArray<readonly [number, number]>, shape: HandShape): string[] {
+  const reasons: string[] = []
+  const rating = OPP_RATING_LABEL[rateOpportunity(opportunityTotal)]
+
+  if (waits.length > 0) {
+    const waitText = waits.map(wait => `${formatTile(wait.tile)}×${wait.remaining}`).join('、')
+    reasons.push(`打出 ${formatTile(tile)} 后机会数 ${opportunityTotal} 张（${rating}），有效进张：${waitText}`)
+    reasons.push(`听牌形态：${WAIT_SHAPE_LABEL[waitShape]}（进张 ${waits.length} 种）`)
+  }
+  else {
+    reasons.push(`打出 ${formatTile(tile)} 后手牌未形成听牌结构，机会数 0——还需要两次以上进张才能听牌`)
   }
 
-  if (sameCount === 1 && !hasPrev && !hasNext) {
-    return `${shapeSummary}${formatTile(tile)} 只有隔张联系，进张面比连续搭子更窄。`
+  if (brokeCombos.length > 0) {
+    reasons.push(`⚠️ 拆散强组合 ${brokeCombos.map(([a, b]) => `${a}-${b}`).join('、')}：两张牌辐射 1-9 全部数字，朱扬原话"千万别拆"`)
+  }
+  else {
+    reasons.push(`结构保持完好：${shape.triplets + shape.sequences} 组成型面子、${shape.pairs} 组对子、${shape.adjacentPairs + shape.gapPairs} 组搭子未被破坏`)
   }
 
-  if (sameCount === 1 && (hasPrev || hasNext) && !(hasPrev && hasNext)) {
-    return `${shapeSummary}${formatTile(tile)} 只有一侧邻张，保留其他对子和双向连张的收益更高。`
-  }
-
-  return `${shapeSummary}这个选择让剩余手牌的成组、对子和连续搭子总评分最高。`
+  return reasons
 }
 
-function analyzeDiscard(tile: Tile, hand: Tile[]): TileAnalysis {
-  const remainingHand = removeOneTile(hand, tile)
-  const remainingShape = evaluateRemainingShape(remainingHand)
+function analyzeCandidate(tile: Tile, hand: Tile[]): CandidateAnalysis {
+  const remaining = removeOneTile(hand, tile)
+  const opportunity = countOpportunities(remaining)
+  const waitShape = classifyWaitShape(opportunity.waits)
+  const brokeCombos = brokenStrongCombos(hand, tile)
+  const shape = evaluateRemainingShape(remaining)
+
+  // 综合分：机会数是主准绳（朱扬：机会数是取舍的准绳），
+  // 拆强组合严重惩罚（复盘启发式 tileEfficiency/high），
+  // 形状分做同机会数下的次级排序。
+  const score = opportunity.total * 100
+    + shape.score
+    - brokeCombos.length * 300
 
   return {
-    score: remainingShape.score + getTileDiscardPreference(tile, hand),
-    reason: buildDiscardReason(tile, hand, remainingShape),
+    tile,
+    opportunityTotal: opportunity.total,
+    waits: opportunity.waits,
+    waitShape,
+    brokeCombos,
+    shapeScore: shape.score,
+    score,
+    reasons: buildReasons(tile, opportunity.total, opportunity.waits, waitShape, brokeCombos, shape),
   }
 }
+
+function analyzeHand(hand: Tile[]): HandState {
+  const seen = new Set<string>()
+  const analyses: CandidateAnalysis[] = []
+
+  for (const tile of hand) {
+    const key = tileKey(tile)
+    if (seen.has(key))
+      continue
+    seen.add(key)
+    analyses.push(analyzeCandidate(tile, hand))
+  }
+
+  const best = analyses.reduce((top, current) => (current.score > top.score ? current : top))
+  const correctKeys = new Set(
+    analyses
+      .filter(analysis => analysis.opportunityTotal === best.opportunityTotal
+        && analysis.brokeCombos.length <= best.brokeCombos.length)
+      .map(analysis => tileKey(analysis.tile)),
+  )
+
+  return { hand, analyses, best, correctKeys }
+}
+
+// ---------------------------------------------------------------------------
+// 题目生成：构造"一进听"14 张手牌（摸牌后场景）
+// 3 面子 + 将对 + 搭子 + 1 张浮牌：打掉浮牌即听牌，打结构牌则机会数骤降，
+// 让每张候选牌都有理论区分度（M3 训练题思路：出"打哪张机会数最大"题）。
+// ---------------------------------------------------------------------------
 
 function generateDeck(): Tile[] {
   const deck: Tile[] = []
@@ -188,39 +247,113 @@ function generateDeck(): Tile[] {
   return deck
 }
 
-// 生成一手牌
-function generateHand(): { hand: Tile[], bestDiscard: Tile, discardReason: string } {
-  const hand: Tile[] = []
+function takeFromDeck(deck: Tile[], type: TileType, value: number): boolean {
+  const index = deck.findIndex(tile => tile.type === type && tile.value === value)
+  if (index === -1)
+    return false
+  deck.splice(index, 1)
+  return true
+}
+
+function drawRandom(deck: Tile[]): Tile | null {
+  if (deck.length === 0)
+    return null
+  return deck.splice(Math.floor(Math.random() * deck.length), 1)[0]
+}
+
+function randType(): TileType {
+  return VALID_TYPES[Math.floor(Math.random() * VALID_TYPES.length)]
+}
+
+function randValue(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1))
+}
+
+function tryBuildOneAwayHand(): Tile[] | null {
   const deck = generateDeck()
+  const hand: Tile[] = []
 
-  for (let i = 0; i < 13; i++) {
-    const index = Math.floor(Math.random() * deck.length)
-    hand.push(deck.splice(index, 1)[0])
-  }
-
-  let bestTile = hand[0]
-  let bestAnalysis = analyzeDiscard(hand[0], hand)
-  const checkedTiles = new Set<string>([tileKey(hand[0])])
-
-  for (let i = 1; i < hand.length; i++) {
-    const tile = hand[i]
-    const key = tileKey(tile)
-    if (checkedTiles.has(key))
-      continue
-
-    checkedTiles.add(key)
-    const analysis = analyzeDiscard(tile, hand)
-    if (analysis.score > bestAnalysis.score) {
-      bestAnalysis = analysis
-      bestTile = tile
+  // 3 个面子（顺子为主，偶尔刻子）
+  for (let meld = 0; meld < 3; meld++) {
+    if (Math.random() < 0.8) {
+      const type = randType()
+      const value = randValue(1, 7)
+      if (!(takeFromDeck(deck, type, value) && takeFromDeck(deck, type, value + 1) && takeFromDeck(deck, type, value + 2)))
+        return null
+      hand.push({ type, value }, { type, value: value + 1 }, { type, value: value + 2 })
+    }
+    else {
+      const type = randType()
+      const value = randValue(1, 9)
+      if (!(takeFromDeck(deck, type, value) && takeFromDeck(deck, type, value) && takeFromDeck(deck, type, value)))
+        return null
+      hand.push({ type, value }, { type, value }, { type, value })
     }
   }
 
-  return { hand, bestDiscard: bestTile, discardReason: bestAnalysis.reason }
+  // 将对
+  const pairType = randType()
+  const pairValue = randValue(1, 9)
+  if (!(takeFromDeck(deck, pairType, pairValue) && takeFromDeck(deck, pairType, pairValue)))
+    return null
+  hand.push({ type: pairType, value: pairValue }, { type: pairType, value: pairValue })
+
+  // 搭子（两面搭）
+  const runType = randType()
+  const runValue = randValue(1, 8)
+  if (!(takeFromDeck(deck, runType, runValue) && takeFromDeck(deck, runType, runValue + 1)))
+    return null
+  hand.push({ type: runType, value: runValue }, { type: runType, value: runValue + 1 })
+
+  // 浮牌：70% 取搭子附近的牌制造取舍纠结，30% 纯随机
+  let floatTile: Tile | null = null
+  if (Math.random() < 0.7) {
+    const nearby = [runValue - 2, runValue - 1, runValue + 2, runValue + 3].filter(value => value >= 1 && value <= 9)
+    while (nearby.length > 0 && !floatTile) {
+      const index = Math.floor(Math.random() * nearby.length)
+      const value = nearby.splice(index, 1)[0]
+      if (takeFromDeck(deck, runType, value))
+        floatTile = { type: runType, value }
+    }
+  }
+  if (!floatTile)
+    floatTile = drawRandom(deck)
+  if (!floatTile)
+    return null
+  hand.push(floatTile)
+
+  return hand
+}
+
+function generateHand(): HandState {
+  // 第一轮：要求有理论区分度（最佳机会数 ≥ 8 且有候选低于它）
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const hand = tryBuildOneAwayHand()
+    if (!hand)
+      continue
+    const state = analyzeHand(hand)
+    if (state.best.opportunityTotal >= 8 && state.analyses.some(analysis => analysis.opportunityTotal < state.best.opportunityTotal))
+      return state
+  }
+  // 兜底：任何一进听结构
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const hand = tryBuildOneAwayHand()
+    if (hand)
+      return analyzeHand(hand)
+  }
+  // 极端兜底：纯随机 14 张
+  const deck = generateDeck()
+  const hand: Tile[] = []
+  for (let i = 0; i < 14; i++) {
+    const tile = drawRandom(deck)
+    if (tile)
+      hand.push(tile)
+  }
+  return analyzeHand(hand)
 }
 
 export function DiscardMode({ onComplete }: DiscardModeProps) {
-  const [gameState, setGameState] = useState(() => generateHand())
+  const [gameState, setGameState] = useState<HandState>(() => generateHand())
   const [selectedTile, setSelectedTile] = useState<Tile | null>(null)
   const [showResult, setShowResult] = useState(false)
   const [isSortedHandTile, setIsSortedHandTile] = useState(false)
@@ -272,6 +405,34 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
     setSelectedTile(tile)
   }
 
+  const selectedAnalysis = useMemo(() => {
+    if (!selectedTile)
+      return null
+    return gameState.analyses.find(analysis => sameTile(analysis.tile, selectedTile)) ?? null
+  }, [selectedTile, gameState])
+
+  const selectedTileIsCorrect = selectedTile
+    ? gameState.correctKeys.has(tileKey(selectedTile))
+    : false
+
+  /** 机会数对比列表：Top 4，用户选择不在其中则追加 */
+  const comparison = useMemo(() => {
+    if (!showResult)
+      return []
+    const sorted = [...gameState.analyses].sort((a, b) => b.opportunityTotal - a.opportunityTotal || b.score - a.score)
+    const top = sorted.slice(0, 4)
+    if (selectedTile && !top.some(analysis => sameTile(analysis.tile, selectedTile))) {
+      const selected = sorted.find(analysis => sameTile(analysis.tile, selectedTile))
+      if (selected)
+        top.push(selected)
+    }
+    return top
+  }, [showResult, gameState, selectedTile])
+
+  const maxComparisonOpportunity = useMemo(() => {
+    return Math.max(1, ...comparison.map(analysis => analysis.opportunityTotal))
+  }, [comparison])
+
   const handleConfirm = () => {
     if (!selectedTile || !isRunning)
       return
@@ -279,10 +440,7 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
     setIsRunning(false)
     setShowResult(true)
 
-    const isCorrect = selectedTile.type === gameState.bestDiscard.type
-      && selectedTile.value === gameState.bestDiscard.value
-
-    if (isCorrect) {
+    if (selectedTileIsCorrect) {
       const timeBonus = Math.floor(timeLeft / 3)
       const streakBonus = streak * 20
       setScore(prev => prev + 100 + timeBonus + streakBonus)
@@ -292,7 +450,7 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
       setStreak(0)
       setScore(prev => Math.max(0, prev - 30))
     }
-    trackAnswer('discard', isCorrect, 'best_discard')
+    trackAnswer('discard', selectedTileIsCorrect, 'opportunity_theory')
   }
 
   const handleNextHand = () => {
@@ -310,7 +468,6 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
     onCompleteRef.current(scoreRef.current, 30 - timeLeft)
   }
 
-  const selectedTileIsCorrect = selectedTile ? sameTile(selectedTile, gameState.bestDiscard) : false
   const actionLabel = showResult
     ? round < maxRounds ? '下一把' : '完成练习'
     : '确认出牌'
@@ -323,6 +480,11 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
 
     handleConfirm()
   }
+
+  const bestTile = gameState.best.tile
+  const opportunityGap = selectedAnalysis && !selectedTileIsCorrect
+    ? gameState.best.opportunityTotal - selectedAnalysis.opportunityTotal
+    : 0
 
   return (
     <div className="glass-card p-6">
@@ -362,7 +524,7 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <span className="text-purple-300">选择一张最应该打出的牌</span>
+          <span className="text-purple-300">刚摸进一张牌（14 张），打出哪张机会数最大？</span>
         </motion.div>
       </div>
 
@@ -386,47 +548,117 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
               index={index}
               keyPrefix="discard-"
               selected={selectedTile?.type === tile.type && selectedTile?.value === tile.value}
-              correct={showResult && tile.type === gameState.bestDiscard.type && tile.value === gameState.bestDiscard.value}
+              correct={showResult && gameState.correctKeys.has(tileKey(tile))}
               error={showResult && selectedTile?.type === tile.type && selectedTile?.value === tile.value
-                && !(tile.type === gameState.bestDiscard.type && tile.value === gameState.bestDiscard.value)}
+                && !gameState.correctKeys.has(tileKey(tile))}
               onClick={() => handleSelectTile(tile)}
             />
           ))}
         </motion.div>
       </div>
 
-      {/* 推荐分析 */}
+      {/* 理论驱动的推荐分析 */}
       {showResult && (
         <motion.div
           className="mb-6 p-4 rounded-xl border border-cyan-400/20 bg-cyan-500/10"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="flex flex-wrap items-center gap-4">
+          {/* 推荐头 */}
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             <MajiangTile
-              tile={gameState.bestDiscard}
+              tile={bestTile}
               correct
               small
             />
             <div className="min-w-0 flex-1">
               <div className="text-cyan-200 font-semibold">
-                推荐出牌：
-                {gameState.bestDiscard.value}
-                {gameState.bestDiscard.type}
+                推荐打出：
+                {formatTile(bestTile)}
               </div>
-              <div className="mt-1 text-sm text-cyan-100/80">
-                理由：
-                {gameState.discardReason}
+              <div className="mt-0.5 text-xs text-cyan-100/70">
+                机会数
+                {' '}
+                {gameState.best.opportunityTotal}
+                {' '}
+                张（评级：
+                {OPP_RATING_LABEL[rateOpportunity(gameState.best.opportunityTotal)]}
+                ）·
+                {' '}
+                {WAIT_SHAPE_LABEL[gameState.best.waitShape]}
               </div>
-              {selectedTile && !selectedTileIsCorrect && (
-                <div className="mt-2 text-xs text-cyan-100/60">
-                  你选择的是：
-                  {selectedTile.value}
-                  {selectedTile.type}
-                </div>
-              )}
             </div>
           </div>
+
+          {/* 理论分析列表 */}
+          <div className="space-y-1.5 mb-3">
+            {gameState.best.reasons.map(reason => (
+              <div key={reason} className="text-sm text-cyan-100/85 leading-relaxed">
+                •
+                {reason}
+              </div>
+            ))}
+            <div className="pt-1 text-xs text-amber-200/70">
+              📖 理论依据：朱扬《麻将"机会数"理论与实战》——"机会数是取舍的准绳，没有它就很难判断这手牌的取舍"
+            </div>
+          </div>
+
+          {/* 机会数对比 */}
+          {comparison.length > 1 && (
+            <div className="pt-3 border-t border-cyan-400/15">
+              <div className="text-sm text-cyan-200 font-semibold mb-2">
+                机会数对比（打出后剩余有效进张）
+              </div>
+              {comparison.map((analysis) => {
+                const isBest = analysis.opportunityTotal === gameState.best.opportunityTotal
+                  && analysis.brokeCombos.length <= gameState.best.brokeCombos.length
+                const isSelected = selectedTile && sameTile(analysis.tile, selectedTile)
+                const width = Math.round(analysis.opportunityTotal / maxComparisonOpportunity * 100)
+                return (
+                  <div key={tileKey(analysis.tile)} className="flex items-center gap-2 mb-1.5">
+                    <span className={`w-12 text-xs shrink-0 ${isBest ? 'text-green-400 font-bold' : 'text-gray-300'}`}>
+                      {formatTile(analysis.tile)}
+                      {isSelected ? ' ←你' : ''}
+                    </span>
+                    <div className="flex-1 h-4 bg-black/30 rounded overflow-hidden">
+                      <div
+                        className={`h-4 rounded transition-all ${isBest ? 'bg-green-500/70' : isSelected ? 'bg-red-500/60' : 'bg-cyan-500/40'}`}
+                        style={{ width: `${Math.max(width, analysis.opportunityTotal > 0 ? 6 : 0)}%` }}
+                      />
+                    </div>
+                    <span className="w-36 text-xs text-gray-300 shrink-0">
+                      {analysis.opportunityTotal}
+                      {' '}
+                      张 ·
+                      {' '}
+                      {WAIT_SHAPE_LABEL[analysis.waitShape]}
+                      {analysis.brokeCombos.length > 0 ? ' · 拆强组合' : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 你的选择点评 */}
+          {selectedTile && !selectedTileIsCorrect && selectedAnalysis && (
+            <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-400/20">
+              <div className="text-sm text-red-300 leading-relaxed">
+                你选的
+                {' '}
+                {formatTile(selectedAnalysis.tile)}
+                ：机会数
+                {' '}
+                {selectedAnalysis.opportunityTotal}
+                {' '}
+                张
+                {selectedAnalysis.brokeCombos.length > 0
+                  && `，且拆散了强组合 ${selectedAnalysis.brokeCombos.map(([a, b]) => `${a}-${b}`).join('、')}`}
+                {opportunityGap > 0 && `——比最佳选择少 ${opportunityGap} 张有效进张`}
+                {opportunityGap === 0 && selectedAnalysis.brokeCombos.length > 0 && '——机会数虽持平，但拆强组合是复盘重罚项'}
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -445,8 +677,7 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
             ? (
                 <div className="text-green-400 font-bold">
                   <span className="text-2xl mr-2">✓</span>
-                  正确！
-                  {gameState.discardReason}
+                  正确！数着进张打牌——这就是机会数决策
                 </div>
               )
             : (
@@ -454,9 +685,15 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
                   <span className="text-2xl mr-2">✗</span>
                   最佳出牌是
                   {' '}
-                  {gameState.bestDiscard.value}
-                  {gameState.bestDiscard.type}
-                  <div className="text-sm font-normal mt-1 text-gray-400">{gameState.discardReason}</div>
+                  {formatTile(bestTile)}
+                  <div className="text-sm font-normal mt-1 text-gray-400">
+                    打
+                    {formatTile(bestTile)}
+                    后机会数最大（
+                    {gameState.best.opportunityTotal}
+                    {' '}
+                    张），详见上方理论分析
+                  </div>
                 </div>
               )}
         </motion.div>

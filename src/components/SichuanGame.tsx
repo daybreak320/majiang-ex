@@ -1,10 +1,11 @@
+import type { GameHistoryEntry } from '../game/persistence'
 import type { GameState, LegalAction, PlayerId, TileInstance } from '../game/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
 import { createInitialGame, recommendDingque } from '../game/core'
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
-import { clearUnfinishedGame, saveUnfinishedGame } from '../game/persistence'
-import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildSettlementSummary, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
+import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
+import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildHistoryEntry, buildHistoryInsight, buildSettlementSummary, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
 import { shouldAdvanceAI } from '../game/ui'
 import { MajiangTile } from './MajiangTile'
 
@@ -64,6 +65,83 @@ function PlayerPanel({ state, playerId, thinking }: { state: GameState, playerId
   )
 }
 
+function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, legal, submit }: { state: GameState, thinking: PlayerId | null, selectedTileId: string | null, setSelectedTileId: (id: string | null) => void, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
+  const player = state.players[0]
+  const selectedAction = discardActions.find(action => action.tileId === selectedTileId)
+  return (
+    <section className={`player-panel player-south ${state.currentPlayer === 0 && state.phase === 'discarding' ? 'active-player' : ''}`}>
+      <div className="player-heading">
+        <div>
+          <strong>{PLAYER_NAMES[0]}</strong>
+          {state.dealer === 0 && <span className="dealer-badge">庄</span>}
+        </div>
+        <strong className={player.score >= 0 ? 'positive-score' : 'negative-score'}>
+          {player.score >= 0 ? '+' : ''}
+          {player.score}
+        </strong>
+      </div>
+      <div className="player-meta">
+        <span>真人玩家</span>
+        <span>
+          定缺
+          {player.dingque ?? '—'}
+        </span>
+        <span>{player.hasWon ? `已胡 · ${player.winInfo?.fan ?? 0}番` : `${player.hand.length}张`}</span>
+        {thinking === 0 && <span className="thinking">思考中…</span>}
+      </div>
+      {player.melds.length > 0 && (
+        <div className="meld-list">
+          {player.melds.map((meld, index) => (
+            <div className="meld" key={`${meld.tiles[0].id}-${index}`}>
+              <b>{MELD_LABELS[meld.kind]}</b>
+              {meld.tiles.map(tile => <MiniTile key={tile.id} tile={tile} />)}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="south-hand" aria-label="你的手牌">
+        {player.hand.map(tile => (
+          <MajiangTile
+            tile={tile}
+            key={tile.id}
+            selected={selectedTileId === tile.id}
+            disabled={!discardIds.has(tile.id)}
+            onClick={() => setSelectedTileId(tile.id)}
+            onDoubleClick={() => discardIds.has(tile.id) && submit(discardActions.find(action => action.tileId === tile.id)!)}
+          />
+        ))}
+      </div>
+      <div className="action-bar">
+        <div className="turn-status">
+          {state.phase === 'responding' && legal.length === 0
+            ? '等待其他玩家响应…'
+            : state.currentPlayer === 0 || legal.length > 0
+              ? '请选择动作'
+              : '等待 AI 行动…'}
+        </div>
+        {otherActions.map((action, index) => (
+          <button
+            className={action.type === 'hu' ? 'win-action' : 'secondary-action'}
+            key={`${action.type}-${'kind' in action ? action.kind : ''}-${'tileId' in action ? action.tileId : index}`}
+            onClick={() => submit(action)}
+          >
+            {actionLabel(action, state)}
+          </button>
+        ))}
+        <button className="primary-action" disabled={selectedAction === undefined} onClick={() => selectedAction && submit(selectedAction)}>
+          出牌
+          {selectedTileId && player.hand.find(tile => tile.id === selectedTileId)
+            ? ` ${tileLabel(player.hand.find(tile => tile.id === selectedTileId)!)}`
+            : ''}
+        </button>
+      </div>
+      <div className="discard-river" aria-label="你的牌河">
+        {player.discards.map(tile => <MiniTile key={tile.id} tile={tile} />)}
+      </div>
+    </section>
+  )
+}
+
 function actionLabel(action: Exclude<LegalAction, { type: 'discard' | 'dingque' }>, state: GameState): string {
   if (action.type === 'pass')
     return '过'
@@ -75,10 +153,11 @@ function actionLabel(action: Exclude<LegalAction, { type: 'discard' | 'dingque' 
   return `${MELD_LABELS[action.kind]} ${tile ? tileLabel(tile) : ''}`
 }
 
-function SettlementPage({ state, onHome, onNewGame }: { state: GameState, onHome: () => void, onNewGame: () => void }) {
+function SettlementPage({ state, history, onHome, onNewGame }: { state: GameState, history: GameHistoryEntry[], onHome: () => void, onNewGame: () => void }) {
   const [showAllEvents, setShowAllEvents] = useState(false)
   const summary = buildSettlementSummary(state)
   const review = buildGameReview(state)
+  const insight = buildHistoryInsight(history)
   const timeline = buildEventTimeline(state, showAllEvents)
   const ordered = [...summary.players].sort((a, b) => a.rank - b.rank)
   const transferSection = (title: string, transfers: typeof summary.instantTransfers) => (
@@ -241,6 +320,114 @@ function SettlementPage({ state, onHome, onNewGame }: { state: GameState, onHome
               </div>
             )}
       </section>
+      {insight !== null && insight.gameCount >= 2 && (
+        <section className="settlement-card history-insight">
+          <span className="eyebrow">
+            近
+            {insight.gameCount}
+            {' '}
+            局整体分析
+          </span>
+          <h3>
+            {insight.winCount}
+            /
+            {insight.gameCount}
+            局胡牌 · 决策可改进率
+            {Math.round(insight.improvableRate * 100)}
+            %
+          </h3>
+          <div className="history-stats">
+            <div>
+              <b className={insight.totalScore >= 0 ? 'positive-score' : 'negative-score'}>
+                {insight.totalScore >= 0 ? '+' : ''}
+                {insight.totalScore}
+              </b>
+              <span>累计得分</span>
+            </div>
+            <div>
+              <b>
+                {insight.avgRank.toFixed(1)}
+              </b>
+              <span>平均排名</span>
+            </div>
+            <div>
+              <b>
+                {insight.dealtInCount}
+              </b>
+              <span>点炮次数</span>
+            </div>
+            <div>
+              <b>
+                {insight.decisionCount}
+              </b>
+              <span>复盘决策数</span>
+            </div>
+          </div>
+          <div className="history-ratings" aria-label="决策评级分布">
+            <span className="rating-bar">
+              <i className="rating-excellent" style={{ width: `${Math.round(insight.excellentRate * 100)}%` }} />
+              <i className="rating-reasonable" style={{ width: `${Math.round((1 - insight.excellentRate - insight.improvableRate) * 100)}%` }} />
+              <i className="rating-improvable" style={{ width: `${Math.round(insight.improvableRate * 100)}%` }} />
+            </span>
+            <div className="rating-legend">
+              <span>
+                优秀
+                {Math.round(insight.excellentRate * 100)}
+                %
+              </span>
+              <span>
+                合理
+                {Math.round((1 - insight.excellentRate - insight.improvableRate) * 100)}
+                %
+              </span>
+              <span>
+                可改进
+                {Math.round(insight.improvableRate * 100)}
+                %
+              </span>
+            </div>
+          </div>
+          {insight.trendDelta !== null && (
+            <p className={`history-trend ${insight.trendDelta <= 0 ? 'positive-score' : 'negative-score'}`}>
+              {insight.trendDelta <= 0 ? '↓ 趋势向好' : '↑ 波动上升'}
+              ：最近一局可改进率
+              {Math.round((insight.latestImprovableRate ?? 0) * 100)}
+              %，较前几局平均
+              {insight.trendDelta <= 0 ? '下降' : '上升'}
+              {Math.abs(Math.round(insight.trendDelta * 100))}
+              个百分点
+            </p>
+          )}
+          {insight.issueGroups.length > 0 && (
+            <div className="history-issues">
+              {insight.issueGroups.slice(0, 3).map(group => (
+                <div className="history-issue" key={group.label}>
+                  <strong>
+                    {group.label}
+                    ×
+                    {group.count}
+                  </strong>
+                  {group.latest && (
+                    <small>
+                      最近一例：实际
+                      {group.latest.actual}
+                      ，推荐
+                      {group.latest.recommended}
+                      ——
+                      {group.latest.reason}
+                    </small>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {insight.advice.length > 0 && (
+            <ul className="history-advice">
+              {insight.advice.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          )}
+        </section>
+      )}
       <section className="settlement-card event-replay">
         <div className="event-replay-heading">
           <div>
@@ -281,6 +468,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
   const stateRef = useRef(state)
   const scheduleToken = useRef(0)
   const pausedRef = useRef(false)
+  const historyRef = useRef<GameHistoryEntry[] | null>(null)
   stateRef.current = state
   pausedRef.current = paused
 
@@ -413,8 +601,13 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
   }, [paused, seed, state])
 
   if (state.phase === 'finished') {
+    if (historyRef.current === null) {
+      const entry = buildHistoryEntry(state, buildGameReview(state))
+      recordFinishedGame(entry)
+      historyRef.current = [entry, ...loadGameHistory()]
+    }
     clearUnfinishedGame()
-    return <SettlementPage state={state} onHome={onHome} onNewGame={onNewGame} />
+    return <SettlementPage state={state} history={historyRef.current} onHome={onHome} onNewGame={onNewGame} />
   }
 
   const leaveGame = () => {
@@ -429,8 +622,6 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
       onHome()
     }
   }
-
-  const selectedAction = discardActions.find(action => action.tileId === selectedTileId)
 
   return (
     <main className="game-shell">
@@ -476,53 +667,53 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
             ))}
           </div>
         </section>
-        <PlayerPanel state={state} playerId={0} thinking={thinking} />
+        <SouthPlayerPanel
+          state={state}
+          thinking={thinking}
+          selectedTileId={selectedTileId}
+          setSelectedTileId={setSelectedTileId}
+          discardActions={discardActions}
+          discardIds={discardIds}
+          otherActions={otherActions}
+          legal={legal}
+          submit={submit}
+        />
       </div>
 
-      <section className="user-control-panel">
-        {error && (
-          <div className="game-error" role="alert">
-            操作失败：
-            {error}
-          </div>
-        )}
-        {state.phase === 'dingque' && state.players[0].dingque === null
-          ? (
-              <div className="dingque-selection">
-                <div className="dingque-hand">
-                  <span>你的起手牌</span>
-                  <div className="hand-scroll" aria-label="定缺前的你的手牌">{state.players[0].hand.map(tile => <MajiangTile tile={tile} key={tile.id} />)}</div>
-                </div>
-                <div className="dingque-panel">
-                  <div>
-                    <h2>请选择定缺</h2>
-                    <p>先查看起手牌再选择；确认前其他玩家不会开始定缺。</p>
+      {(error || (state.phase === 'dingque' && state.players[0].dingque === null)) && (
+        <section className="user-control-panel">
+          {error && (
+            <div className="game-error" role="alert">
+              操作失败：
+              {error}
+            </div>
+          )}
+          {state.phase === 'dingque' && state.players[0].dingque === null
+            ? (
+                <div className="dingque-selection">
+                  <div className="dingque-hand">
+                    <span>你的起手牌</span>
+                    <div className="hand-scroll" aria-label="定缺前的你的手牌">{state.players[0].hand.map(tile => <MajiangTile tile={tile} key={tile.id} />)}</div>
                   </div>
-                  <div className="dingque-actions">
-                    {legal.filter((action): action is Extract<LegalAction, { type: 'dingque' }> => action.type === 'dingque').map(action => (
-                      <button className={action.tileType === recommended ? 'recommended' : ''} key={action.tileType} onClick={() => submit(action)}>
-                        {action.tileType}
-                        {action.tileType === recommended && <small>推荐</small>}
-                      </button>
-                    ))}
+                  <div className="dingque-panel">
+                    <div>
+                      <h2>请选择定缺</h2>
+                      <p>先查看起手牌再选择；确认前其他玩家不会开始定缺。</p>
+                    </div>
+                    <div className="dingque-actions">
+                      {legal.filter((action): action is Extract<LegalAction, { type: 'dingque' }> => action.type === 'dingque').map(action => (
+                        <button className={action.tileType === recommended ? 'recommended' : ''} key={action.tileType} onClick={() => submit(action)}>
+                          {action.tileType}
+                          {action.tileType === recommended && <small>推荐</small>}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          : (
-              <>
-                <div className="hand-scroll" aria-label="你的手牌">{state.players[0].hand.map(tile => <MajiangTile tile={tile} key={tile.id} selected={selectedTileId === tile.id} disabled={!discardIds.has(tile.id)} onClick={() => setSelectedTileId(tile.id)} onDoubleClick={() => discardIds.has(tile.id) && submit(discardActions.find(action => action.tileId === tile.id)!)} />)}</div>
-                <div className="action-bar">
-                  <div className="turn-status">{state.phase === 'responding' && legal.length === 0 ? '等待其他玩家响应…' : state.currentPlayer === 0 || legal.length > 0 ? '请选择动作' : '等待 AI 行动…'}</div>
-                  {otherActions.map((action, index) => <button className={action.type === 'hu' ? 'win-action' : 'secondary-action'} key={`${action.type}-${'kind' in action ? action.kind : ''}-${'tileId' in action ? action.tileId : index}`} onClick={() => submit(action)}>{actionLabel(action, state)}</button>)}
-                  <button className="primary-action" disabled={selectedAction === undefined} onClick={() => selectedAction && submit(selectedAction)}>
-                    出牌
-                    {selectedTileId && state.players[0].hand.find(tile => tile.id === selectedTileId) ? ` ${tileLabel(state.players[0].hand.find(tile => tile.id === selectedTileId)!)}` : ''}
-                  </button>
-                </div>
-              </>
-            )}
-      </section>
+              )
+            : null}
+        </section>
+      )}
     </main>
   )
 }
