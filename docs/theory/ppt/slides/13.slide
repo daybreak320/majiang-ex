@@ -1,0 +1,29 @@
+<Slide style={{
+  width: '1280px', height: '720px',
+  background: 'linear-gradient(135deg, #8B1A1A 0%, #5C0E0E 50%, #8B1A1A 100%)',
+  padding: '60px', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+  position: 'relative', overflow: 'hidden',
+}}>
+  <svg width={500} height={500} viewBox="0 0 500 500" style={{ position: 'absolute', left: 0, bottom: 0, opacity: 0.05 }}>
+    <path d="M 100 250 L 200 150 L 300 250 L 400 150" fill="none" stroke="#fff" strokeWidth="3" />
+    <path d="M 100 300 L 200 200 L 300 300 L 400 200" fill="none" stroke="#fff" strokeWidth="3" />
+  </svg>
+  <Box style={{ marginBottom: 16 }}>
+    <Text style={{ fontSize: 20, color: '#C9A227', letterSpacing: 6 }}>CHAPTER 04</Text>
+  </Box>
+  <Text style={{ fontSize: 80, fontWeight: 'bold', color: '#FDF6EC', marginBottom: 16 }}>
+    实战速查
+  </Text>
+  <Text style={{ fontSize: 28, color: '#F3D9B5', marginBottom: 24 }}>
+    把理论变成决策
+  </Text>
+  <Box style={{ maxWidth: 680, textAlign: 'center' }}>
+    <Text style={{ fontSize: 18, color: '#E8C98A', lineHeight: 1.8 }}>
+      番种策略表 + 理论→代码落地状态<br />
+      <span style={{ fontSize: 14, opacity: 0.7 }}>这些理论已经变成 majiang-ex 的 AI 大脑</span>
+    </Text>
+  </Box>
+  <Box style={{ position: 'absolute', bottom: 30, right: 60 }}>
+    <Text style={{ fontSize: 14, color: '#E8C98A', opacity: 0.5 }}>13 / 16</Text>
+  </Box>
+</Slide>

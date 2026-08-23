@@ -1,0 +1,47 @@
+<Slide style={{
+  width: '1280px', height: '720px',
+  background: 'linear-gradient(135deg, #8B1A1A 0%, #5C0E0E 50%, #8B1A1A 100%)',
+  padding: '60px', flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+  position: 'relative', overflow: 'hidden',
+}}>
+  {/* 背景装饰：散落牌块轮廓 */}
+  <svg width={680} height={420} viewBox="0 0 680 420" style={{ position: 'absolute', right: 0, bottom: 0, opacity: 0.07 }}>
+    <rect x="40" y="40" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="100" y="28" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="160" y="52" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="220" y="34" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="280" y="58" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="340" y="40" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="400" y="26" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="460" y="50" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="520" y="36" width="48" height="60" rx="6" fill="#fff" />
+    <rect x="580" y="60" width="48" height="60" rx="6" fill="#fff" />
+  </svg>
+  <svg width={500} height={300} viewBox="0 0 500 300" style={{ position: 'absolute', left: 0, top: 0, opacity: 0.05 }}>
+    <path d="M 100 150 L 200 50 L 300 150 L 400 50" fill="none" stroke="#fff" strokeWidth="3" />
+    <path d="M 100 200 L 200 100 L 300 200 L 400 100" fill="none" stroke="#fff" strokeWidth="3" />
+  </svg>
+  {/* 中部金句 */}
+  <Box style={{ flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+    <Text style={{ fontSize: 18, color: '#C9A227', letterSpacing: 8, fontWeight: 'bold' }}>THE END</Text>
+    <Text style={{ fontSize: 72, fontWeight: 'bold', color: '#FDF6EC', letterSpacing: 4 }}>
+      数着进张打牌
+    </Text>
+    <Box style={{ width: 120, height: 4, background: '#C9A227', borderRadius: 2, marginTop: 4 }} />
+    <Text style={{ fontSize: 24, color: '#F3D9B5' }}>
+      从凭手感，到有理论的决策
+    </Text>
+    <Text style={{ fontSize: 16, color: '#E8C98A', opacity: 0.8, marginTop: 8 }}>
+      两本书 · 四个章节 · 一套已经写进代码的麻将哲学
+    </Text>
+  </Box>
+  {/* 底部来源 */}
+  <Box style={{ position: 'absolute', bottom: 40, left: 60 }}>
+    <Text style={{ fontSize: 14, color: '#E8C98A', opacity: 0.7 }}>
+      朱扬《麻将实战心法》· majiang-ex
+    </Text>
+  </Box>
+  <Box style={{ position: 'absolute', bottom: 30, right: 60 }}>
+    <Text style={{ fontSize: 14, color: '#E8C98A', opacity: 0.5 }}>16 / 16</Text>
+  </Box>
+</Slide>

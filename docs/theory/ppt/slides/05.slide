@@ -1,0 +1,105 @@
+<Slide style={{
+  width: '1280px', height: '720px',
+  background: '#FAF7F2', padding: '40px 60px 20px',
+  flexDirection: 'column',
+}}>
+  {/* A 标题区 */}
+  <Box style={{ marginBottom: 12 }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+      <Box style={{ background: '#8B1A1A', borderRadius: 6, padding: '4px 10px' }}>
+        <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#fff' }}>核心公式</Text>
+      </Box>
+      <Text style={{ fontSize: 14, color: '#6B6B6B' }}>第一章 · 机会数</Text>
+    </Box>
+    <Text style={{ fontSize: 36, fontWeight: 'bold', color: '#2B2B2B' }}>
+      机会数<span style={{ color: '#8B1A1A' }}>怎么算</span>？
+    </Text>
+  </Box>
+  {/* B 内容区 */}
+  <Box style={{ flexDirection: 'row', gap: 24, flex: 1, height: 500 }}>
+    {/* 左侧：巨型公式 + 拆解 60% */}
+    <Box style={{ flex: 6, flexDirection: 'column', justifyContent: 'center', gap: 20 }}>
+      {/* 巨型公式 */}
+      <Box style={{ background: 'linear-gradient(135deg, #8B1A1A 0%, #6B1010 100%)', borderRadius: 20, padding: '32px 40px', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16 }}>
+        <Text style={{ fontSize: 80, fontWeight: 'bold', color: '#C9A227' }}>10</Text>
+        <Text style={{ fontSize: 56, color: '#F3D9B5' }}>×</Text>
+        <Text style={{ fontSize: 80, fontWeight: 'bold', color: '#C9A227' }}>4</Text>
+        <Text style={{ fontSize: 56, color: '#F3D9B5' }}>−</Text>
+        <Text style={{ fontSize: 80, fontWeight: 'bold', color: '#FDF6EC' }}>4</Text>
+        <Text style={{ fontSize: 56, color: '#F3D9B5' }}>=</Text>
+        <Text style={{ fontSize: 96, fontWeight: 'bold', color: '#C9A227' }}>36</Text>
+      </Box>
+      {/* 三步拆解 */}
+      <Box style={{ flexDirection: 'row', gap: 12 }}>
+        <Box style={{ flex: 1, background: '#FFFEF8', borderRadius: 12, padding: 16, border: '1px solid #eee4d2', flexDirection: 'column', gap: 6 }}>
+          <Text style={{ fontSize: 14, color: '#8B1A1A', fontWeight: 'bold' }}>① 进张种类</Text>
+          <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#8B1A1A' }}>10</Text>
+          <Text style={{ fontSize: 13, color: '#4a4038', lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 'bold' }}>10 种</span>不同的牌能让你更接近听牌——比如 3万、5筒、7条…
+          </Text>
+        </Box>
+        <Box style={{ flex: 1, background: '#FFFEF8', borderRadius: 12, padding: 16, border: '1px solid #eee4d2', flexDirection: 'column', gap: 6 }}>
+          <Text style={{ fontSize: 14, color: '#1A7F5C', fontWeight: 'bold' }}>② 每种最多 4 张</Text>
+          <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#1A7F5C' }}>× 4</Text>
+          <Text style={{ fontSize: 13, color: '#4a4038', lineHeight: 1.5 }}>
+            血战用 108 张牌，<span style={{ fontWeight: 'bold' }}>每个数字有 4 张</span>（万条筒各 1-9 × 4）
+          </Text>
+        </Box>
+        <Box style={{ flex: 1, background: '#FFFEF8', borderRadius: 12, padding: 16, border: '1px solid #eee4d2', flexDirection: 'column', gap: 6 }}>
+          <Text style={{ fontSize: 14, color: '#C9A227', fontWeight: 'bold' }}>③ 减掉已见张数</Text>
+          <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#C9A227' }}>− 4</Text>
+          <Text style={{ fontSize: 13, color: '#4a4038', lineHeight: 1.5 }}>
+            牌河/鸣牌里已经见过 <span style={{ fontWeight: 'bold' }}>4 张</span>，不在牌堆里了
+          </Text>
+        </Box>
+      </Box>
+      {/* SVG 牌河示意 */}
+      <Box style={{ background: '#F5EDE0', borderRadius: 10, padding: 12, flexDirection: 'column', gap: 8 }}>
+        <Text style={{ fontSize: 13, color: '#6b5636' }}>牌河已见 4 张示意：</Text>
+        <svg width={400} height={56} viewBox="0 0 400 56">
+          <rect x="10" y="4" width="40" height="48" rx="5" fill="#e8e0d0" stroke="#ccc" strokeWidth="1" />
+          <text x="30" y="28" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#1A7F5C">3</text>
+          <text x="30" y="42" textAnchor="middle" fontSize="10" fill="#999">万</text>
+          <rect x="56" y="4" width="40" height="48" rx="5" fill="#e8e0d0" stroke="#ccc" strokeWidth="1" />
+          <text x="76" y="28" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#1A7F5C">7</text>
+          <text x="76" y="42" textAnchor="middle" fontSize="10" fill="#999">条</text>
+          <rect x="102" y="4" width="40" height="48" rx="5" fill="#e8e0d0" stroke="#ccc" strokeWidth="1" />
+          <text x="122" y="28" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#C0392B">5</text>
+          <text x="122" y="42" textAnchor="middle" fontSize="10" fill="#999">筒</text>
+          <rect x="148" y="4" width="40" height="48" rx="5" fill="#e8e0d0" stroke="#ccc" strokeWidth="1" />
+          <text x="168" y="28" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#1A7F5C">2</text>
+          <text x="168" y="42" textAnchor="middle" fontSize="10" fill="#999">万</text>
+          <text x="220" y="28" fontSize="14" fill="#999">这 4 张已被打出/碰过，</text>
+          <text x="220" y="46" fontSize="14" fill="#999">不在牌堆里，要扣掉</text>
+        </svg>
+      </Box>
+    </Box>
+    {/* 右侧：深入解释 40% */}
+    <Box style={{ flex: 4, flexDirection: 'column', gap: 14, justifyContent: 'center' }}>
+      <Box style={{ background: '#FFFEF8', borderRadius: 12, padding: 20, border: '1px solid #eee4d2' }}>
+        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#2B2B2B', marginBottom: 10 }}>别被公式吓到</Text>
+        <Text style={{ fontSize: 16, color: '#4a4038', lineHeight: 1.8 }}>
+          本质就是"<span style={{ fontWeight: 'bold', color: '#8B1A1A' }}>数人头</span>"：<br /><br />
+          每种进张牌像一扇门，每扇门后最多站 <span style={{ fontWeight: 'bold' }}>4 个人</span>（4 张牌）。但有些人已经露面了（在牌河里见过），所以实际等在门后的人数 = <span style={{ fontWeight: 'bold', color: '#8B1A1A' }}>门数 × 4 − 已经见过的</span>。<br /><br />
+          这个总数越大，你"<span style={{ fontWeight: 'bold', color: '#8B1A1A' }}>逮到一张就能冲刺</span>"的概率越高。
+        </Text>
+      </Box>
+      <Box style={{ background: 'rgba(201,162,39,0.08)', borderRadius: 8, padding: 14, border: '1px solid #e8d8a8' }}>
+        <Text style={{ fontSize: 14, color: '#6b5636', lineHeight: 1.6, fontStyle: 'italic' }}>
+          "某手牌实际机会数 = 进张种类 × 4 − 已见张数"<br />
+          <span style={{ fontSize: 12, opacity: 0.7 }}>——《理论册》第 7 节 · 78 人划线</span>
+        </Text>
+      </Box>
+      <Box style={{ background: '#F0FBF5', borderRadius: 8, padding: 14, border: '1px solid #c3e6d3' }}>
+        <Text style={{ fontSize: 14, color: '#1A7F5C', fontWeight: 'bold' }}>✅ 已落地为代码</Text>
+        <Text style={{ fontSize: 13, color: '#2C5F2D', lineHeight: 1.6, marginTop: 4 }}>
+          <span style={{ fontFamily: 'monospace', fontSize: 12, background: '#e8f5ee', padding: '2px 6px', borderRadius: 4 }}>countOpportunities()</span> 复用引擎 isWinningHand，支持定缺门扣减
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+  {/* C 页脚 */}
+  <Box style={{ height: 40, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
+    <Text style={{ fontSize: 14, color: '#a0a0a0' }}>05 / 16</Text>
+  </Box>
+</Slide>

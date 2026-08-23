@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>朱扬麻将理论 · 读书卡片</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f0e8;
+    color: #2b2b2b;
+    padding: 40px 20px 60px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  /* ===== 封面 ===== */
+  .cover {
+    background: linear-gradient(135deg, #7d1515 0%, #9c1f1f 55%, #7d1515 100%);
+    border-radius: 20px;
+    padding: 44px 40px 38px;
+    color: #fdf6ec;
+    box-shadow: 0 12px 32px rgba(125, 21, 21, .28);
+    margin-bottom: 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::after {
+    content: "";
+    position: absolute; right: -60px; top: -60px;
+    width: 240px; height: 240px;
+    border: 2px solid rgba(255, 255, 255, .12);
+    border-radius: 50%;
+  }
+  .cover::before {
+    content: "";
+    position: absolute; right: 20px; top: 20px;
+    width: 160px; height: 160px;
+    border: 2px solid rgba(255, 255, 255, .10);
+    border-radius: 50%;
+  }
+  .cover .kicker {
+    font-size: 13px; letter-spacing: 4px; color: #e8c98a;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+  .cover h1 { font-size: 34px; font-weight: 800; letter-spacing: 2px; margin-bottom: 8px; }
+  .cover p.sub { font-size: 15px; color: #f3d9b5; line-height: 1.7; max-width: 620px; }
+  .cover .books { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .book-tag {
+    background: rgba(255,255,255,.12);
+    border: 1px solid rgba(255,255,255,.25);
+    padding: 6px 14px; border-radius: 999px;
+    font-size: 13px; color: #fdf6ec;
+  }
+  .book-tag b { color: #e8c98a; }
+
+  /* ===== 卡片网格 ===== */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+
+  .card {
+    background: #fffdf8;
+    border-radius: 16px;
+    padding: 24px 24px 20px;
+    box-shadow: 0 4px 16px rgba(60, 40, 20, .08);
+    border: 1px solid #eee4d2;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .card .tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; letter-spacing: 1px;
+    color: #fff; padding: 4px 10px; border-radius: 6px;
+    align-self: flex-start;
+  }
+  .tag.red   { background: #9c1f1f; }
+  .tag.green { background: #1a7f5c; }
+  .tag.gold  { background: #b8860b; }
+  .tag.gray  { background: #6b6b6b; }
+  .card h2 { font-size: 20px; font-weight: 800; color: #3a2a1a; line-height: 1.4; }
+  .card .body { font-size: 14px; line-height: 1.85; color: #4a4038; }
+  .card .body li { margin-left: 18px; margin-bottom: 6px; }
+  .card .quote {
+    background: #fbf3e3; border-left: 3px solid #c9a227;
+    padding: 10px 14px; border-radius: 0 8px 8px 0;
+    font-size: 13px; color: #6b5636; line-height: 1.8;
+  }
+  .card .quote .src { display: block; margin-top: 6px; font-size: 11px; color: #a08a5f; }
+
+  /* ===== 牌块 ===== */
+  .tiles { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tile {
+    width: 42px; height: 56px; border-radius: 8px;
+    background: #fff; border: 1.5px solid #d8cbb4;
+    box-shadow: 0 2px 6px rgba(60,40,20,.12), inset 0 -3px 0 rgba(0,0,0,.04);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-weight: 800; position: relative;
+  }
+  .tile .num { font-size: 20px; line-height: 1; }
+  .tile .suit { font-size: 11px; margin-top: 2px; }
+  .tile.wan .num, .tile.wan .suit { color: #1a7f5c; }
+  .tile.tiao .num, .tile.tiao .suit { color: #1a7f5c; }
+  .tile.tong .num, .tile.tong .suit { color: #c0392b; }
+  .tile.empty { border-style: dashed; border-color: #d8cbb4; background: #faf5ec; color: #b8a98c; }
+  .tile.best { border-color: #c9a227; box-shadow: 0 0 0 2px #e8c98a66, 0 3px 8px rgba(60,40,20,.15); }
+  .tile-group-label { font-size: 12px; color: #8a7a5f; margin-top: 2px; }
+
+  /* ===== 基准值表 ===== */
+  table.bench { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.bench th {
+    background: #9c1f1f; color: #fdf6ec; text-align: left;
+    padding: 7px 10px; font-weight: 600;
+  }
+  table.bench th:first-child { border-radius: 8px 0 0 0; }
+  table.bench th:last-child { border-radius: 0 8px 0 0; }
+  table.bench td { padding: 7px 10px; border-bottom: 1px solid #efe5d3; color: #4a4038; }
+  table.bench tr:last-child td { border-bottom: none; }
+  table.bench td.num { font-weight: 800; color: #9c1f1f; text-align: center; }
+  table.bench tr.hl td { background: #fbf3e3; font-weight: 600; }
+
+  /* ===== 番种 ===== */
+  .fan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .fan-item {
+    background: #f8f1e4; border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  }
+  .fan-item b { display: block; color: #7d1515; margin-bottom: 2px; font-size: 14px; }
+  .fan-item span { color: #6b5636; line-height: 1.6; }
+
+  /* ===== 落地状态 ===== */
+  .status-list { font-size: 13px; line-height: 1.9; }
+  .status-list .ok { color: #1a7f5c; font-weight: 700; }
+  .status-list code {
+    background: #f3ece0; border: 1px solid #e4d7c0; border-radius: 4px;
+    padding: 1px 6px; font-size: 12px; color: #7d1515;
+  }
+
+  .footer {
+    margin-top: 32px; text-align: center;
+    font-size: 12px; color: #a08a5f; line-height: 1.8;
+  }
+  .rule-row { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #4a4038; padding: 6px 0; border-bottom: 1px dashed #eee4d2; }
+  .rule-row:last-child { border-bottom: none; }
+  .rule-row .w { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+  .w.high { background: #fbe3e3; color: #9c1f1f; }
+  .w.mid  { background: #fbf3d8; color: #a06f00; }
+  .w.plus { background: #e2f3ea; color: #1a7f5c; }
+  .w.chk  { background: #ececec; color: #666; }
+
+  @media (max-width: 720px) {
+    .cover { padding: 30px 22px; }
+    .cover h1 { font-size: 26px; }
+    .fan-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== 封面 ===== -->
+  <header class="cover">
+    <div class="kicker">📚 读书卡片 · 麻将理论精华</div>
+    <h1>机会数 · 成都麻将高级打法</h1>
+    <p class="sub">把两本书的硬核理论，拆成一张张可以带进实战的知识卡。核心结论均源自微信读书全书热门划线，可在 App 内溯源。</p>
+    <div class="books">
+      <span class="book-tag">📖 <b>麻将"机会数"理论与实战</b> · 评分 79.2</span>
+      <span class="book-tag">📖 <b>成都麻将高级打法（升级版）</b> · 评分 83.2</span>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- 机会数定义 -->
+    <article class="card">
+      <span class="tag red">核心武器</span>
+      <h2>机会数 = 能让手牌"下听"的进张</h2>
+      <div class="body">
+        <p>判断一手牌好坏的标准：<b>能不能很快听牌，且听牌个数多不多。</b></p>
+        <ul>
+          <li>听牌快、个数多 → 牌好，容易胡</li>
+          <li>机会数理论的核心：<b>如何快速听牌</b></li>
+        </ul>
+      </div>
+      <div class="quote">机会数就是能够让一副牌"下听"的那些数字牌。<span class="src">——《理论册》第 2 节 · 99 人划线</span></div>
+    </article>
+
+    <!-- 机会数计算 -->
+    <article class="card">
+      <span class="tag green">怎么算</span>
+      <h2>机会数的计算公式</h2>
+      <div class="body">
+        <p><b>机会数 = 进张种类 × 4 − 已见张数</b></p>
+        <p style="margin-top:8px;">示例：10 种进张、每种剩 4 张、牌河已见 4 张</p>
+        <p style="font-size:18px;font-weight:800;color:#9c1f1f;margin-top:4px;">10 × 4 − 4 = 36</p>
+      </div>
+      <div class="quote">核心公式来自《理论册》第 7 节 · 78 人划线<span class="src">项目里已实现为 countOpportunities()，并支持定缺门扣减</span></div>
+    </article>
+
+    <!-- 基准值 -->
+    <article class="card">
+      <span class="tag gold">速查基准</span>
+      <h2>机会数基准值</h2>
+      <table class="bench">
+        <tr><th>听牌形态</th><th>基准机会数</th><th>说明</th></tr>
+        <tr><td>单吊</td><td class="num">3</td><td>4 张 − 己见 1</td></tr>
+        <tr><td>间张听（卡张）</td><td class="num">4</td><td>如 3、5 听 4</td></tr>
+        <tr><td>两头听</td><td class="num">最大 8</td><td>如 3、4 听 2、5</td></tr>
+        <tr><td>三张听</td><td class="num">最大 11</td><td>—</td></tr>
+        <tr class="hl"><td>机会数 24</td><td class="num">24</td><td>"听牌很容易"</td></tr>
+      </table>
+      <div class="quote">单吊 3，间张 4，两头听最大 8，三张听最大 11……机会数 24 应该是很大了，听牌很容易。<span class="src">——《成都册》第 10 节 · 54 人划线</span></div>
+    </article>
+
+    <!-- 强组合 -->
+    <article class="card">
+      <span class="tag red">组合秘籍</span>
+      <h2>最强两张牌组合</h2>
+      <div class="tiles">
+        <div class="tile wan best"><span class="num">2</span><span class="suit">万</span></div>
+        <div class="tile wan best"><span class="num">7</span><span class="suit">万</span></div>
+        <div class="tile tiao best"><span class="num">3</span><span class="suit">条</span></div>
+        <div class="tile tiao best"><span class="num">7</span><span class="suit">条</span></div>
+        <div class="tile tong best"><span class="num">3</span><span class="suit">筒</span></div>
+        <div class="tile tong best"><span class="num">8</span><span class="suit">筒</span></div>
+      </div>
+      <div class="tile-group-label">27 · 37 · 38 —— 只用 2 张牌，连起 1～9 全部数字</div>
+      <div class="body" style="margin-top:8px;">
+        <p>⚠️ <b>千万不要随便拆开！</b>一旦拆开，威力倍减。民间说法："3、7 张不能随便打"。</p>
+      </div>
+      <div class="quote">27、37、38 这 3 种组合效率最高，辐射效果都达到了极致。<span class="src">——《理论册》第 3 节 · 108 人划线</span></div>
+    </article>
+
+    <!-- 四人抬轿 -->
+    <article class="card">
+      <span class="tag green">牌型识别</span>
+      <h2>四人抬轿</h2>
+      <div class="body">
+        <ul>
+          <li>由 <b>7 张牌</b>组成</li>
+          <li>其中有 <b>1～3 个对子</b></li>
+          <li><b>进一张牌即可下听</b></li>
+        </ul>
+        <p style="margin-top:8px;">图形应朝简单化方向走：能分解成"四人抬轿"就不要分解成"7 张无听"。</p>
+        <p style="margin-top:6px;">💡 <b>四人抬轿中留对子是最佳选择</b>——一对 7 万 + 27 万强组合，听牌概率非常大。</p>
+      </div>
+      <div class="quote">7 张牌、1～3 对子、进一张就听 —— 四人抬轿形态<span class="src">——《成都册》第 13 节 · 75 人划线</span></div>
+    </article>
+
+    <!-- 7张无听 -->
+    <article class="card">
+      <span class="tag gold">牌型识别</span>
+      <h2>"7 张无听"形成秘籍</h2>
+      <div class="body">
+        <p>手中剩 <b>8 张牌</b>时：<b>打掉对子的挨张</b>，使其成为"7 张无听"。</p>
+        <p style="margin-top:8px;">两个对子的 7 张无听，打 5 万更合理。</p>
+        <p style="margin-top:6px;">反面警示：如果打 7 筒把 567 筒打丢了，那就是明显打偏了，这手牌就难说了。</p>
+      </div>
+      <div class="quote">打 7 筒就是"7 张无听"？可用机会数自行验证。<span class="src">——《成都册》第 13 节 · 68 人划线</span></div>
+    </article>
+
+    <!-- 攻防原则 -->
+    <article class="card">
+      <span class="tag red">攻防战术</span>
+      <h2>开局三大原则</h2>
+      <div class="body">
+        <ul>
+          <li><b>先打生张，后打熟张</b></li>
+          <li><b>先打单张，后打双张</b></li>
+        </ul>
+      </div>
+      <div class="quote">《成都册》第 3 节 开局打法 · 140 人划线（全书最高热度）<span class="src">防守进阶：打熟不打生，跟上家 &gt; 对家 &gt; 下家；踩 1/4/7 线出牌避免放炮</span></div>
+    </article>
+
+    <!-- 战术库 -->
+    <article class="card">
+      <span class="tag green">战术库</span>
+      <h2>腾挪 · 放飞鸽 · 欺骗</h2>
+      <div class="body">
+        <p><b>腾挪战术</b>：调整牌型结构腾出最佳进张位，不破坏 27/28/37 强组合。</p>
+        <p style="margin-top:6px;"><b>放飞鸽</b>：故意打出看似有用实则诱敌的牌，为自摸/做大创造条件。先算机会数定方向，再考虑骗招。</p>
+        <p style="margin-top:6px;"><b>欺骗战术</b>：单吊 4、7 万时故意打中间张 4 万，诱出 7 万。258、369 同理，单吊打中间效果更好。</p>
+      </div>
+      <div class="quote">碰 3 筒放飞 4 筒为自摸创造了条件。<span class="src">——《成都册》第 11 节 · 90 人划线</span></div>
+    </article>
+
+    <!-- 防守安全 -->
+    <article class="card">
+      <span class="tag gold">防守安全</span>
+      <h2>危险度评估</h2>
+      <div class="body">
+        <ul>
+          <li><b>打熟不打生</b>：跟上家 &gt; 对家 &gt; 下家</li>
+          <li><b>踩线</b>：跟着 1/4/7 这样的线打，避免放炮</li>
+          <li><b>尾盘</b>：打边张比打中张安全（7 万比 4 万安全）</li>
+          <li><b>听牌</b>：听在别人已经碰了的牌上是好策略</li>
+        </ul>
+      </div>
+      <div class="quote">杠牌通常情况下<b>不能破坏牌型结构</b>。<span class="src">——《成都册》第 19 节 · 42 人划线</span></div>
+    </article>
+
+    <!-- 番种表 -->
+    <article class="card">
+      <span class="tag gold">成都番种</span>
+      <h2>番种策略速查</h2>
+      <div class="fan-grid">
+        <div class="fan-item"><b>基本胡</b><span>以速度为先，尽快下听</span></div>
+        <div class="fan-item"><b>对子胡</b><span>保留对子，注意碰牌时机</span></div>
+        <div class="fan-item"><b>清一色</b><span>花色集中，注意定缺配合</span></div>
+        <div class="fan-item"><b>暗七对</b><span>不碰不杠，全手保留对子潜力</span></div>
+        <div class="fan-item"><b>带幺九</b><span>保留 1、9 结构</span></div>
+        <div class="fan-item"><b>清对胡</b><span>清一色 + 对子胡复合</span></div>
+        <div class="fan-item"><b>将对胡</b><span>只含 2、5、8 的对子胡</span></div>
+        <div class="fan-item"><b>换三张</b><span>结合牌型花色分布决定换出哪一色</span></div>
+      </div>
+    </article>
+
+    <!-- 决策速查 -->
+    <article class="card">
+      <span class="tag gray">复盘速查</span>
+      <h2>决策规则（可打分）</h2>
+      <div class="rule-row"><span class="w high">重罚</span>拆散 27/28/37 强组合</div>
+      <div class="rule-row"><span class="w high">重罚</span>破坏"已下听"结构</div>
+      <div class="rule-row"><span class="w mid">中罚</span>放弃四人抬轿 / 留对子机会</div>
+      <div class="rule-row"><span class="w mid">中罚</span>可避免却打成"7 张无听"</div>
+      <div class="rule-row"><span class="w plus">加分</span>保留连接 1-9 全数字的结构</div>
+      <div class="rule-row"><span class="w chk">检查</span>打 1、9 边张需按机会数重新核算（认知误区）</div>
+      <div class="rule-row"><span class="w chk">检查</span>定缺选预期牌效损失最小的缺门</div>
+    </article>
+
+    <!-- 落地状态 -->
+    <article class="card">
+      <span class="tag green">已落地 · majiang-ex</span>
+      <h2>理论 → 代码状态</h2>
+      <div class="status-list">
+        <div>✅ <span class="ok">机会数计算</span> → <code>src/knowledge/mahjongTheory.ts</code> 已接入 AI 出牌</div>
+        <div>✅ <span class="ok">强组合检测</span> → 复盘「拆强组合」诊断</div>
+        <div>✅ <span class="ok">安全分</span> → 复盘「尾盘危险牌」诊断</div>
+        <div>✅ <span class="ok">番种速查</span> → <code>CHENGDU_FAN_TABLE</code></div>
+        <div>✅ <span class="ok">复盘引擎</span> → <code>src/review/analyzer.ts</code> 输出 2 问题 + 1 亮点</div>
+        <div>⏳ 训练题生成（M3）→ 用机会数基准出"打哪张机会数最大"题</div>
+        <div>⏳ 副露牌效评估（M4）→ 碰/杠后的机会数计算</div>
+      </div>
+    </article>
+
+  </div>
+
+  <div class="footer">
+    知识来源：微信读书全书热门划线 + 完整章节目录（理论骨架 + 精华高亮）· 核心结论可溯源<br>
+    落地项目：majiang-ex · 92 测试全绿 · git tag v0.1-stage
+  </div>
+
+</div>
+</body>
+</html>
