@@ -7,6 +7,7 @@ import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engi
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
 import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildHistoryEntry, buildHistoryInsight, buildSettlementSummary, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
 import { shouldAdvanceAI } from '../game/ui'
+import { analyzeGame } from '../review/analyzer'
 import { MajiangTile } from './MajiangTile'
 
 interface SichuanGameProps {
@@ -155,7 +156,9 @@ function actionLabel(action: Exclude<LegalAction, { type: 'discard' | 'dingque' 
 
 function SettlementPage({ state, history, onHome, onNewGame }: { state: GameState, history: GameHistoryEntry[], onHome: () => void, onNewGame: () => void }) {
   const [showAllEvents, setShowAllEvents] = useState(false)
+  const [reviewFeedback, setReviewFeedback] = useState<'认可' | '不认可' | null>(null)
   const summary = buildSettlementSummary(state)
+  const intelligentReview = analyzeGame(state.events, 0)
   const review = buildGameReview(state)
   const insight = buildHistoryInsight(history)
   const timeline = buildEventTimeline(state, showAllEvents)
@@ -319,6 +322,75 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
                 ))}
               </div>
             )}
+      </section>
+      <section className="settlement-card intelligent-review">
+        <div className="intelligent-review-header">
+          <div>
+            <span className="eyebrow">M2 智能复盘报告</span>
+            <h3>牌效与决策诊断</h3>
+          </div>
+          <div className="review-feedback" aria-label="复盘报告反馈">
+            <span>报告是否有帮助？</span>
+            <button className={reviewFeedback === '认可' ? 'feedback-active' : ''} onClick={() => setReviewFeedback('认可')}>认可</button>
+            <button className={reviewFeedback === '不认可' ? 'feedback-active feedback-negative' : ''} onClick={() => setReviewFeedback('不认可')}>不认可</button>
+          </div>
+        </div>
+        {intelligentReview.summary.majorIssues.length > 0
+          ? (
+              <div className="intelligent-review-columns">
+                <div>
+                  <h4>主要问题</h4>
+                  <div className="intelligent-issues">
+                    {intelligentReview.summary.majorIssues.map(issue => (
+                      <article key={`${issue.sequence}-${issue.title}`} className="intelligent-issue">
+                        <strong>{issue.title}</strong>
+                        <p>{issue.detail}</p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h4>优秀决策</h4>
+                  {intelligentReview.summary.goodDecision
+                    ? (
+                        <article className="intelligent-highlight">
+                          <strong>{intelligentReview.summary.goodDecision.title}</strong>
+                          <p>{intelligentReview.summary.goodDecision.detail}</p>
+                        </article>
+                      )
+                    : <p className="muted">本局暂未发现达到优秀标准的决策。</p>}
+                </div>
+              </div>
+            )
+          : <p className="muted">本局未发现明显问题，继续保持稳定的出牌节奏。</p>}
+        <div className="opportunity-trend">
+          <div className="trend-heading">
+            <h4>机会数趋势</h4>
+            <span>
+              {intelligentReview.stats.opportunityTrend.length}
+              {' 次可分析出牌'}
+            </span>
+          </div>
+          <div className="trend-bars" aria-label="每次出牌后的机会数趋势">
+            {intelligentReview.stats.opportunityTrend.length > 0
+              ? intelligentReview.stats.opportunityTrend.map((value, index) => <span key={`${index}-${value}`} style={{ height: `${Math.max(8, Math.min(100, value * 10))}%` }} title={`第${index + 1}次：${value}个机会`} />)
+              : <span className="trend-empty">暂无足够数据</span>}
+          </div>
+        </div>
+        <div className="intelligent-stats">
+          <div>
+            <b>{intelligentReview.stats.decisions}</b>
+            <span>分析决策</span>
+          </div>
+          <div>
+            <b>{intelligentReview.stats.totalLoss}</b>
+            <span>机会数总损失</span>
+          </div>
+          <div>
+            <b>{intelligentReview.stats.averageLoss.toFixed(1)}</b>
+            <span>平均损失</span>
+          </div>
+        </div>
       </section>
       {insight !== null && insight.gameCount >= 2 && (
         <section className="settlement-card history-insight">
