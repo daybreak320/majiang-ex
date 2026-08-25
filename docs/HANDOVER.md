@@ -1,6 +1,6 @@
 # majiang-ex 阶段性成果与 Codex 交接手册
 
-> 更新时间：2026-08-20 ｜ 交接背景：Trae 停用，后续由 Codex 接手 UI 与联调工作
+> 更新时间：2026-08-24 ｜ 交接背景：Trae 停用，后续由 Codex 接手 UI 与联调工作
 > 本文件既是"当前进展快照"，也是"新协作者（Codex）的入场手册"。请先读本文件，再读 `PRD.md` 与 `docs/theory/mahjong-theory-zhuyang.md`。
 
 ---
@@ -16,7 +16,7 @@
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M1 完整对局 | 规则引擎 + AI + 可玩 UI（定缺/碰杠胡/终局结算/存档恢复/倒计时） | ✅ **完成**（Trae 与规则层此前已完成） |
-| M2 基础复盘 | 局后诊断引擎：2 个主要问题 + 1 个优秀决策 | 🟡 **核心引擎完成**（`src/review/`），**UI 复盘页未接**（原定 Trae 做） |
+| M2 基础复盘 | 局后诊断引擎：2 个主要问题 + 1 个优秀决策 | ✅ **完成**（理论复盘 UI、机会数趋势、用户反馈及历史摘要均已接入） |
 | M3 训练闭环 | 专项训练题（听牌/舍牌/牌型） | ⬜ 未开始，理论弹药已备 |
 | M4 算法升级 | 副露/听牌场景的牌效评估 | ⬜ 未开始，理论弹药已备 |
 
@@ -99,10 +99,10 @@ npx eslint src/game src/review src/knowledge src/components src/App.tsx  # lint 
 
 ## 8. Codex 接手指南（下一步起点）
 
-**最近一次会话中确认的计划**：M2 复盘引擎核心已完成，接下来是 **Trae 未做完的复盘页 UI**，以及此前排队中的移动端实机内测。建议顺序：
+**最近一次会话中确认的计划**：M2 理论复盘闭环已完成，接下来进入移动端实机内测与 M3 训练闭环。建议顺序：
 
-1. **复盘页 UI（M2 收尾）**：读 `src/review/types.ts` 的 `ReviewReport` 契约 → 在 `src/components/` 新建复盘页组件，渲染"2 个主要问题 + 1 个优秀决策 + 机会数趋势"，加"认可 / 不认可"按钮（PRD 12.3 要求）。输入：`analyzeGame(state.events)` 的输出。注意现有 `presentation.ts` 的 `buildGameReview` 是**简易版**（AI 对拍评级），与 `src/review/` 的智能版并存，接 UI 时优先用 `src/review/`。
-2. **移动端实机内测**：修正不同屏幕的牌桌密度与触控细节（DEVELOPMENT_PROGRESS.md 下一步准确起点第 1 条）。
+1. **移动端实机内测**：继续修正不同屏幕的牌桌密度与触控细节；390px 竖屏定缺面板横向溢出已修复。
+2. **M3 训练闭环**：从 `ReviewReport.summary.majorIssues` 生成对应专项训练入口与题组。
 3. **Git 收尾**：`main` 分支已有本阶段基线 tag（见 git log），后续按里程碑提交。
 
 **Codex 入场规则**：
@@ -113,7 +113,7 @@ npx eslint src/game src/review src/knowledge src/components src/App.tsx  # lint 
 ## 9. 已知边界与待办
 
 - 🟡 复盘引擎只诊断无副露手牌（碰/杠后跳过，M4 补）；
-- 🟡 复盘页 UI 未接（上一条 Codex 第一优先）；
+- ✅ 复盘页 UI 已接：`TheoryReviewPanel` 展示重点结论、机会数趋势，并将认可度写入 `majiang-ex:review-feedback`；
 - 🟡 训练题生成（M3）弹药已备未开工：可用 `brokenStrongCombos` / `classifyWaitShape` 出"拆错搭"题；
 - ⬜ git 远端推送与 GitHub 开发分支（DEVELOPMENT_PROGRESS.md 下一步起点第 3 条）；
 - ⬜ 两本书原文细节补全（微信读书 API 只拿到骨架 + 热门划线精华，详见理论文档第 7 节）。

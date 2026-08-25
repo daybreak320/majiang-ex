@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { MajiangHand } from './components/MajiangHand'
 import { ParticleBackground } from './components/ParticleBackground'
 import { SichuanGame } from './components/SichuanGame'
+import { APP_VERSION } from './config/release'
 import { loadUnfinishedGame } from './game/persistence'
 
 type Page = 'home' | 'game'
@@ -45,6 +46,11 @@ function App() {
             <span className="eyebrow">麻将练习场 · 实战版</span>
             <h1>从牌效训练，到四方牌桌</h1>
             <p>完整体验成都血战到底：定缺、碰杠胡、三家 AI 对抗与逐笔结算。</p>
+            <span className="release-version">
+              内测版
+              {' '}
+              {APP_VERSION}
+            </span>
           </div>
         </header>
         <section className="battle-card">

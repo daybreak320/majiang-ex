@@ -7,6 +7,8 @@ import {
   safetyScore,
 } from '../knowledge/mahjongTheory'
 
+export const REVIEW_ALGORITHM_VERSION = 'zhuyang-opportunity-v1'
+
 /** 机会数损失阈值：损失 ≥ 4 个有效进张即判定为牌效失误（朱扬：机会数是牌效核心指标） */
 export const LOSS_THRESHOLD = 4
 /** 防守安全分低于该值视为危险牌（3/6/9 线非熟张） */

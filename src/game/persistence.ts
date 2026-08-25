@@ -31,10 +31,26 @@ export interface GameHistoryEntry {
   decisionsReasonable: number
   decisionsImprovable: number
   issues: ReviewIssueSample[]
+  reviewAlgorithmVersion?: string
 }
 
 export const GAME_HISTORY_KEY = 'majiang-ex:game-history'
 export const GAME_HISTORY_LIMIT = 12
+
+export const REVIEW_FEEDBACK_KEY = 'majiang-ex:review-feedback'
+export const REVIEW_FEEDBACK_LIMIT = 200
+
+export type ReviewFeedbackVerdict = 'accepted' | 'rejected'
+
+export interface ReviewFeedback {
+  seed: number
+  sequence: number
+  conclusionKind: string
+  verdict: ReviewFeedbackVerdict
+  reason: string
+  algorithmVersion: string
+  createdAt: number
+}
 
 function storage(): Storage | null {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
@@ -77,6 +93,52 @@ export function loadGameHistory(): GameHistoryEntry[] {
   }
   catch {
     return []
+  }
+}
+
+function isReviewFeedback(value: unknown): value is ReviewFeedback {
+  if (typeof value !== 'object' || value === null)
+    return false
+  const candidate = value as Partial<ReviewFeedback>
+  return typeof candidate.seed === 'number'
+    && typeof candidate.sequence === 'number'
+    && typeof candidate.conclusionKind === 'string'
+    && (candidate.verdict === 'accepted' || candidate.verdict === 'rejected')
+    && typeof candidate.reason === 'string'
+    && typeof candidate.algorithmVersion === 'string'
+    && typeof candidate.createdAt === 'number'
+}
+
+export function loadReviewFeedback(): ReviewFeedback[] {
+  const store = storage()
+  if (store === null)
+    return []
+  try {
+    const raw = store.getItem(REVIEW_FEEDBACK_KEY)
+    if (raw === null)
+      return []
+    const value: unknown = JSON.parse(raw)
+    return Array.isArray(value) ? value.filter(isReviewFeedback) : []
+  }
+  catch {
+    return []
+  }
+}
+
+export function recordReviewFeedback(entry: ReviewFeedback): void {
+  const store = storage()
+  if (store === null)
+    return
+  try {
+    const retained = loadReviewFeedback().filter(item => !(
+      item.seed === entry.seed
+      && item.sequence === entry.sequence
+      && item.conclusionKind === entry.conclusionKind
+    ))
+    store.setItem(REVIEW_FEEDBACK_KEY, JSON.stringify([entry, ...retained].slice(0, REVIEW_FEEDBACK_LIMIT)))
+  }
+  catch {
+    // Feedback must never block the settlement page in restricted storage contexts.
   }
 }
 

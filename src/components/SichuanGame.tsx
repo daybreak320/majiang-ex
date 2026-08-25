@@ -1,13 +1,16 @@
 import type { GameHistoryEntry } from '../game/persistence'
 import type { GameState, LegalAction, PlayerId, TileInstance } from '../game/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { APP_VERSION } from '../config/release'
 import { advanceAIOnce } from '../game/ai'
 import { createInitialGame, recommendDingque } from '../game/core'
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
-import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildHistoryEntry, buildHistoryInsight, buildSettlementSummary, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
+import { AI_STYLE_LABELS, buildEventTimeline, buildHistoryInsight, buildSettlementSummary, buildTheoryHistoryEntry, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
 import { shouldAdvanceAI } from '../game/ui'
+import { analyzeGame } from '../review/analyzer'
 import { MajiangTile } from './MajiangTile'
+import { TheoryReviewPanel } from './TheoryReviewPanel'
 
 interface SichuanGameProps {
   seed: number
@@ -156,7 +159,7 @@ function actionLabel(action: Exclude<LegalAction, { type: 'discard' | 'dingque' 
 function SettlementPage({ state, history, onHome, onNewGame }: { state: GameState, history: GameHistoryEntry[], onHome: () => void, onNewGame: () => void }) {
   const [showAllEvents, setShowAllEvents] = useState(false)
   const summary = buildSettlementSummary(state)
-  const review = buildGameReview(state)
+  const theoryReview = useMemo(() => analyzeGame(state.events), [state.events])
   const insight = buildHistoryInsight(history)
   const timeline = buildEventTimeline(state, showAllEvents)
   const ordered = [...summary.players].sort((a, b) => a.rank - b.rank)
@@ -202,6 +205,11 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
           {' '}
           · 本局事件可回放
         </p>
+        <span className="release-version">
+          内测版
+          {' '}
+          {APP_VERSION}
+        </span>
       </header>
       <section className="ranking-grid">
         {ordered.map(player => (
@@ -287,39 +295,7 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
               </div>
             )}
       </section>
-      <section className="settlement-card game-review">
-        <span className="eyebrow">智能牌局复盘</span>
-        <h3>{review.headline}</h3>
-        <p className="muted">{review.summary}</p>
-        {review.decisions.length === 0
-          ? <p>本局没有可分析的用户决策。</p>
-          : (
-              <div className="review-decisions">
-                {review.decisions.map(decision => (
-                  <article key={decision.sequence}>
-                    <div className="review-heading">
-                      <strong>
-                        #
-                        {decision.sequence}
-                        {' '}
-                        {decision.title}
-                      </strong>
-                      <span className={`review-rating rating-${decision.rating}`}>{decision.rating}</span>
-                    </div>
-                    <div className="review-hand">{decision.hand.map(tile => <MajiangTile tile={tile} key={tile.id} small />)}</div>
-                    <p>
-                      实际：
-                      <b>{decision.actual}</b>
-                      {' · '}
-                      推荐：
-                      <b>{decision.recommended}</b>
-                    </p>
-                    <small>{decision.reason}</small>
-                  </article>
-                ))}
-              </div>
-            )}
-      </section>
+      <TheoryReviewPanel report={theoryReview} seed={state.seed} />
       {insight !== null && insight.gameCount >= 2 && (
         <section className="settlement-card history-insight">
           <span className="eyebrow">
@@ -602,7 +578,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
 
   if (state.phase === 'finished') {
     if (historyRef.current === null) {
-      const entry = buildHistoryEntry(state, buildGameReview(state))
+      const entry = buildTheoryHistoryEntry(state, analyzeGame(state.events))
       recordFinishedGame(entry)
       historyRef.current = [entry, ...loadGameHistory()]
     }
@@ -627,7 +603,11 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
     <main className="game-shell">
       <header className="game-topbar">
         <div>
-          <span className="eyebrow">成都血战到底</span>
+          <span className="eyebrow">
+            成都血战到底 · 内测版
+            {' '}
+            {APP_VERSION}
+          </span>
           <strong>
             四人实战 · Seed
             {seed}
