@@ -1,0 +1,71 @@
+<Slide style={{
+  width: '1280px', height: '720px',
+  background: 'linear-gradient(135deg, #8B1A1A 0%, #6B1010 50%, #8B1A1A 100%)',
+  padding: '60px', flexDirection: 'row', alignItems: 'stretch',
+  position: 'relative', overflow: 'hidden',
+}}>
+  {/* 装饰圆环 */}
+  <svg width={300} height={300} viewBox="0 0 300 300" style={{ position: 'absolute', right: 0, top: 0, opacity: 0.15 }}>
+    <circle cx="150" cy="150" r="140" fill="none" stroke="#fff" strokeWidth="2" />
+    <circle cx="150" cy="150" r="100" fill="none" stroke="#fff" strokeWidth="2" />
+  </svg>
+  {/* 左侧标题区 */}
+  <Box style={{ flex: 1, flexDirection: 'column', justifyContent: 'center', zIndex: 1 }}>
+    <Text style={{ fontSize: 14, color: '#C9A227', letterSpacing: 4, marginBottom: 16 }}>
+      <span style={{ color: '#C9A227' }}>🔴 读书卡片 · 麻将理论精华</span>
+    </Text>
+    <Text style={{ fontSize: 56, fontWeight: 'bold', color: '#FDF6EC', lineHeight: 1.2, marginBottom: 12 }}>
+      朱扬麻将理论精华
+    </Text>
+    <Text style={{ fontSize: 28, color: '#F3D9B5', marginBottom: 24 }}>
+      机会数 · 成都麻将高级打法
+    </Text>
+    <Text style={{ fontSize: 18, color: '#E8C98A', lineHeight: 1.6, maxWidth: 540 }}>
+      把两本书的硬核理论，拆成图文并茂的知识页。<br />
+      核心结论均源自微信读书全书热门划线，可在 App 内溯源。
+    </Text>
+    <Box style={{ flexDirection: 'row', gap: 12, marginTop: 28 }}>
+      <Box style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 999, padding: '8px 16px' }}>
+        <Text style={{ fontSize: 14, color: '#FDF6EC' }}>
+          📖 <span style={{ color: '#E8C98A', fontWeight: 'bold' }}>机会数理论与实战</span> · 评分 79.2
+        </Text>
+      </Box>
+      <Box style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 999, padding: '8px 16px' }}>
+        <Text style={{ fontSize: 14, color: '#FDF6EC' }}>
+          📖 <span style={{ color: '#E8C98A', fontWeight: 'bold' }}>成都麻将高级打法</span> · 评分 83.2
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+  {/* 右侧 SVG 牌块装饰 */}
+  <Box style={{ width: 420, alignItems: 'center', justifyContent: 'flex-end', zIndex: 1, paddingBottom: 20 }}>
+    <svg width={380} height={420} viewBox="0 0 380 420">
+      {/* 大牌：9万 */}
+      <rect x="120" y="40" width="80" height="100" rx="10" fill="#FFFEF8" stroke="#C9A227" strokeWidth="3" opacity="0.95" />
+      <text x="160" y="80" textAnchor="middle" fontSize="42" fontWeight="bold" fill="#1A7F5C">9</text>
+      <text x="160" y="110" textAnchor="middle" fontSize="16" fill="#1A7F5C">万</text>
+      {/* 小牌横排 */}
+      <rect x="60" y="180" width="48" height="60" rx="6" fill="#FFFEF8" stroke="#D8CBB4" strokeWidth="1.5" opacity="0.8" />
+      <text x="84" y="208" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1A7F5C">3</text>
+      <text x="84" y="226" textAnchor="middle" fontSize="11" fill="#1A7F5C">条</text>
+      <rect x="116" y="180" width="48" height="60" rx="6" fill="#FFFEF8" stroke="#D8CBB4" strokeWidth="1.5" opacity="0.8" />
+      <text x="140" y="208" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1A7F5C">7</text>
+      <text x="140" y="226" textAnchor="middle" fontSize="11" fill="#1A7F5C">条</text>
+      <rect x="172" y="180" width="48" height="60" rx="6" fill="#FFFEF8" stroke="#C9A227" strokeWidth="2.5" opacity="0.9" />
+      <text x="196" y="208" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1A7F5C">2</text>
+      <text x="196" y="226" textAnchor="middle" fontSize="11" fill="#1A7F5C">万</text>
+      <rect x="228" y="180" width="48" height="60" rx="6" fill="#FFFEF8" stroke="#D8CBB4" strokeWidth="1.5" opacity="0.8" />
+      <text x="252" y="208" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#C0392B">8</text>
+      <text x="252" y="226" textAnchor="middle" fontSize="11" fill="#C0392B">筒</text>
+      <rect x="284" y="180" width="48" height="60" rx="6" fill="#FFFEF8" stroke="#D8CBB4" strokeWidth="1.5" opacity="0.8" />
+      <text x="308" y="208" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#C0392B">3</text>
+      <text x="308" y="226" textAnchor="middle" fontSize="11" fill="#C0392B">筒</text>
+      {/* 下方说明 */}
+      <text x="190" y="290" textAnchor="middle" fontSize="14" fill="#E8C98A" opacity="0.7">27 · 37 · 38 — 最强两张牌组合</text>
+      {/* 公式装饰 */}
+      <rect x="80" y="320" width="220" height="60" rx="10" fill="rgba(201,162,39,0.12)" stroke="#C9A227" strokeWidth="1" opacity="0.6" />
+      <text x="190" y="345" textAnchor="middle" fontSize="20" fontWeight="bold" fill="#C9A227">机会数 = 进张 × 4 − 已见</text>
+      <text x="190" y="368" textAnchor="middle" fontSize="12" fill="#E8C98A" opacity="0.7">朱扬理论核心公式</text>
+    </svg>
+  </Box>
+</Slide>

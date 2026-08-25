@@ -1,0 +1,113 @@
+<Slide style={{
+  width: '1280px', height: '720px',
+  background: '#FAF7F2', padding: '40px 60px 20px',
+  flexDirection: 'column',
+}}>
+  {/* A 标题区 */}
+  <Box style={{ marginBottom: 16 }}>
+    <Box style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+      <Box style={{ background: '#C9A227', borderRadius: 6, padding: '4px 10px' }}>
+        <Text style={{ fontSize: 12, fontWeight: 'bold', color: '#fff' }}>速查基准</Text>
+      </Box>
+      <Text style={{ fontSize: 14, color: '#6B6B6B' }}>第一章 · 机会数</Text>
+    </Box>
+    <Text style={{ fontSize: 36, fontWeight: 'bold', color: '#2B2B2B' }}>
+      机会数<span style={{ color: '#C9A227' }}>基准值</span>
+    </Text>
+  </Box>
+  {/* B 内容区 - 图表+洞察 */}
+  <Box style={{ flexDirection: 'row', gap: 24, flex: 1, height: 500 }}>
+    {/* 左侧：SVG 柱状对比图 */}
+    <Box style={{ flex: 6, background: '#FFFEF8', borderRadius: 16, padding: 24, border: '1px solid #eee4d2', flexDirection: 'column', gap: 16 }}>
+      <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#3a2a1a' }}>不同听牌形态的机会数对比</Text>
+      <svg width={560} height={360} viewBox="0 0 560 360">
+        {/* Y轴 */}
+        <line x1="50" y1="20" x2="50" y2="320" stroke="#ccc" strokeWidth="1" />
+        {/* X轴 */}
+        <line x1="50" y1="320" x2="540" y2="320" stroke="#ccc" strokeWidth="1" />
+        {/* 刻度线 */}
+        <line x1="45" y1="80" x2="540" y2="80" stroke="#eee" strokeWidth="1" strokeDasharray="4" />
+        <text x="40" y="84" textAnchor="end" fontSize="11" fill="#999">24</text>
+        <line x1="45" y1="145" x2="540" y2="145" stroke="#eee" strokeWidth="1" strokeDasharray="4" />
+        <text x="40" y="149" textAnchor="end" fontSize="11" fill="#999">11</text>
+        <line x1="45" y1="195" x2="540" y2="195" stroke="#eee" strokeWidth="1" strokeDasharray="4" />
+        <text x="40" y="199" textAnchor="end" fontSize="11" fill="#999">8</text>
+        <line x1="45" y1="278" x2="540" y2="278" stroke="#eee" strokeWidth="1" strokeDasharray="4" />
+        <text x="40" y="282" textAnchor="end" fontSize="11" fill="#999">4</text>
+        <text x="40" y="332" textAnchor="end" fontSize="11" fill="#999">0</text>
+        {/* 单吊=3 */}
+        <rect x="70" y="297" width="70" height="23" fill="#8B1A1A" rx="4" opacity="0.7" />
+        <text x="105" y="290" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#8B1A1A">3</text>
+        <text x="105" y="340" textAnchor="middle" fontSize="13" fill="#4a4038">单吊</text>
+        {/* 间张听=4 */}
+        <rect x="170" y="290" width="70" height="30" fill="#8B1A1A" rx="4" opacity="0.75" />
+        <text x="205" y="283" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#8B1A1A">4</text>
+        <text x="205" y="340" textAnchor="middle" fontSize="13" fill="#4a4038">间张听</text>
+        {/* 两头听=8 */}
+        <rect x="270" y="260" width="70" height="60" fill="#C9A227" rx="4" opacity="0.8" />
+        <text x="305" y="253" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#C9A227">8</text>
+        <text x="305" y="340" textAnchor="middle" fontSize="13" fill="#4a4038">两头听</text>
+        {/* 三张听=11 */}
+        <rect x="370" y="238" width="70" height="82" fill="#C9A227" rx="4" opacity="0.9" />
+        <text x="405" y="231" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#C9A227">11</text>
+        <text x="405" y="340" textAnchor="middle" fontSize="13" fill="#4a4038">三面听</text>
+        {/* 24=易听 */}
+        <rect x="470" y="80" width="70" height="240" fill="#1A7F5C" rx="4" opacity="0.7" />
+        <text x="505" y="73" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#1A7F5C">24</text>
+        <text x="505" y="340" textAnchor="middle" fontSize="13" fill="#4a4038">易听</text>
+        {/* 24 基准线标注 */}
+        <line x1="55" y1="80" x2="540" y2="80" stroke="#1A7F5C" strokeWidth="1.5" strokeDasharray="6 3" />
+        <text x="540" y="74" textAnchor="end" fontSize="12" fill="#1A7F5C" fontWeight="bold">"听牌很容易"</text>
+      </svg>
+    </Box>
+    {/* 右侧：表格 + 洞察 */}
+    <Box style={{ flex: 4, flexDirection: 'column', gap: 16 }}>
+      <Table
+        style={{ width: '100%', height: 260 }}
+        defaultTextStyle={{ fontSize: 15, textAlign: 'center', color: '#222' }}
+        defaultCellStyle={{
+          border: {
+            left: { width: 1, color: '#eee4d2' },
+            right: { width: 1, color: '#eee4d2' },
+            top: { width: 1, color: '#eee4d2' },
+            bottom: { width: 1, color: '#eee4d2' },
+          },
+        }}
+        cells={[
+          [
+            { text: '形态', textStyle: { bold: true, color: '#fff' }, cellStyle: { background: { color: '#8B1A1A' } } },
+            { text: '机会数', textStyle: { bold: true, color: '#fff' }, cellStyle: { background: { color: '#8B1A1A' } } },
+            { text: '说明', textStyle: { bold: true, color: '#fff' }, cellStyle: { background: { color: '#8B1A1A' } } },
+          ],
+          ['单吊', { text: '3', textStyle: { bold: true, color: '#8B1A1A', fontSize: 18 } }, '4张−己见1'],
+          [
+            { text: '间张听', cellStyle: { background: { color: '#faf5ec' } } },
+            { text: '4', textStyle: { bold: true, color: '#8B1A1A', fontSize: 18 }, cellStyle: { background: { color: '#faf5ec' } } },
+            { text: '如3、5听4', cellStyle: { background: { color: '#faf5ec' } } },
+          ],
+          ['两头听', { text: '最大8', textStyle: { bold: true, color: '#C9A227', fontSize: 18 } }, '如3、4听2、5'],
+          [
+            { text: '三面听', cellStyle: { background: { color: '#faf5ec' } } },
+            { text: '最大11', textStyle: { bold: true, color: '#C9A227', fontSize: 18 }, cellStyle: { background: { color: '#faf5ec' } } },
+            { text: '多面同时听', cellStyle: { background: { color: '#faf5ec' } } },
+          ],
+          [
+            { text: '≥24', textStyle: { bold: true, color: '#1A7F5C' }, cellStyle: { background: { color: '#e8f5ee' } } },
+            { text: '"易听"', textStyle: { bold: true, color: '#1A7F5C', fontSize: 18 }, cellStyle: { background: { color: '#e8f5ee' } } },
+            { text: '朱扬原话', textStyle: { color: '#1A7F5C' }, cellStyle: { background: { color: '#e8f5ee' } } },
+          ],
+        ]}
+      />
+      <Box style={{ background: '#FFFEF8', borderRadius: 12, padding: 16, border: '1px solid #eee4d2', flex: 1 }}>
+        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#8B1A1A', marginBottom: 6 }}>📊 怎么用</Text>
+        <Text style={{ fontSize: 15, color: '#4a4038', lineHeight: 1.7 }}>
+          打牌时心里默念：手牌机会数<span style={{ fontWeight: 'bold', color: '#8B1A1A' }}>≥24</span> → 很容易听，大胆做牌；<span style={{ fontWeight: 'bold', color: '#C9A227' }}>8-11</span> → 中等，有进张就下听；<span style={{ fontWeight: 'bold', color: '#8B1A1A' }}>3-4</span> → 只剩单吊/间张，注意别让人先胡了。
+        </Text>
+      </Box>
+    </Box>
+  </Box>
+  {/* C 页脚 */}
+  <Box style={{ height: 40, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
+    <Text style={{ fontSize: 14, color: '#a0a0a0' }}>06 / 16</Text>
+  </Box>
+</Slide>

@@ -1,0 +1,94 @@
+<Slide style={{
+  width: '1280px', height: '720px',
+  background: '#FAF7F2', padding: '40px 60px 20px',
+  flexDirection: 'column',
+}}>
+  {/* A 标题区 */}
+  <Box style={{ marginBottom: 28 }}>
+    <Text style={{ fontSize: 36, fontWeight: 'bold', color: '#8B1A1A', marginBottom: 6 }}>目录 · 四大模块</Text>
+    <Text style={{ fontSize: 18, color: '#6B6B6B' }}>把朱扬两本书拆成你能用上的四层知识</Text>
+  </Box>
+  {/* B 内容区 - 4卡片横排 */}
+  <Box style={{ flexDirection: 'row', gap: 20, flex: 1, height: 460 }}>
+    {/* 卡片1 */}
+    <Box style={{
+      flex: 1, background: '#FFFEF8', borderRadius: 16, padding: 24,
+      boxShadow: '0 4px 16px rgba(60,40,20,0.08)', border: '1px solid #eee4d2',
+      flexDirection: 'column', gap: 14,
+    }}>
+      <Box style={{ width: 56, height: 56, borderRadius: 14, background: '#8B1A1A', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff' }}>1</Text>
+      </Box>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#3a2a1a' }}>机会数理论</Text>
+      <Text style={{ fontSize: 16, color: '#4a4038', lineHeight: 1.7 }}>
+        什么是"下听"？机会数怎么算？基准值是多少？这是朱扬理论的<span style={{ color: '#8B1A1A', fontWeight: 'bold' }}>核心武器</span>——用数字量化你离听牌有多远。
+      </Text>
+      <Box style={{ marginTop: 'auto' }}>
+        <Box style={{ background: '#F5EDE0', borderRadius: 8, padding: '6px 10px', flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, color: '#8a7a5f' }}>📄 P03 - P06</Text>
+        </Box>
+      </Box>
+    </Box>
+    {/* 卡片2 */}
+    <Box style={{
+      flex: 1, background: '#FFFEF8', borderRadius: 16, padding: 24,
+      boxShadow: '0 4px 16px rgba(60,40,20,0.08)', border: '1px solid #eee4d2',
+      flexDirection: 'column', gap: 14,
+    }}>
+      <Box style={{ width: 56, height: 56, borderRadius: 14, background: '#1A7F5C', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff' }}>2</Text>
+      </Box>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#3a2a1a' }}>组合秘籍</Text>
+      <Text style={{ fontSize: 16, color: '#4a4038', lineHeight: 1.7 }}>
+        为什么 27/37/38 最强？"辐射覆盖1-9"是什么意思？四人抬轿和7张无听怎么选？<span style={{ color: '#1A7F5C', fontWeight: 'bold' }}>两张牌的辐射力</span>决定你拆哪张。
+      </Text>
+      <Box style={{ marginTop: 'auto' }}>
+        <Box style={{ background: '#F5EDE0', borderRadius: 8, padding: '6px 10px', flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, color: '#8a7a5f' }}>📄 P07 - P09</Text>
+        </Box>
+      </Box>
+    </Box>
+    {/* 卡片3 */}
+    <Box style={{
+      flex: 1, background: '#FFFEF8', borderRadius: 16, padding: 24,
+      boxShadow: '0 4px 16px rgba(60,40,20,0.08)', border: '1px solid #eee4d2',
+      flexDirection: 'column', gap: 14,
+    }}>
+      <Box style={{ width: 56, height: 56, borderRadius: 14, background: '#C9A227', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff' }}>3</Text>
+      </Box>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#3a2a1a' }}>攻防战术</Text>
+      <Text style={{ fontSize: 16, color: '#4a4038', lineHeight: 1.7 }}>
+        开局三原则、踩线147/258/369、腾挪、放飞鸽、欺骗战术。<span style={{ color: '#C9A227', fontWeight: 'bold' }}>从开局到尾盘</span>的生存法则，少放炮才能赢。
+      </Text>
+      <Box style={{ marginTop: 'auto' }}>
+        <Box style={{ background: '#F5EDE0', borderRadius: 8, padding: '6px 10px', flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, color: '#8a7a5f' }}>📄 P10 - P12</Text>
+        </Box>
+      </Box>
+    </Box>
+    {/* 卡片4 */}
+    <Box style={{
+      flex: 1, background: '#FFFEF8', borderRadius: 16, padding: 24,
+      boxShadow: '0 4px 16px rgba(60,40,20,0.08)', border: '1px solid #eee4d2',
+      flexDirection: 'column', gap: 14,
+    }}>
+      <Box style={{ width: 56, height: 56, borderRadius: 14, background: '#6B6B6B', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 28, fontWeight: 'bold', color: '#fff' }}>4</Text>
+      </Box>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#3a2a1a' }}>实战速查</Text>
+      <Text style={{ fontSize: 16, color: '#4a4038', lineHeight: 1.7 }}>
+        成都番种策略表、决策规则速查、理论→代码落地状态。这些理论已经变成你<span style={{ color: '#8B1A1A', fontWeight: 'bold' }}> majiang-ex 项目的 AI 大脑</span>。
+      </Text>
+      <Box style={{ marginTop: 'auto' }}>
+        <Box style={{ background: '#F5EDE0', borderRadius: 8, padding: '6px 10px', flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, color: '#8a7a5f' }}>📄 P13 - P16</Text>
+        </Box>
+      </Box>
+    </Box>
+  </Box>
+  {/* C 页脚 */}
+  <Box style={{ height: 40, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: 12 }}>
+    <Text style={{ fontSize: 14, color: '#a0a0a0' }}>02 / 16</Text>
+  </Box>
+</Slide>
