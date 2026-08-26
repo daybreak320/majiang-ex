@@ -4,11 +4,16 @@ import { validateGameInvariants } from './invariants'
 export const GAME_SAVE_KEY = 'majiang-ex:unfinished-game'
 export const GAME_SAVE_SCHEMA_VERSION = 1
 
+export interface GameSessionOptions {
+  timedTraining: boolean
+}
+
 export interface GameSave {
   schemaVersion: number
   state: GameState
   stableEventSequence: number
   savedAt: number
+  options?: GameSessionOptions
 }
 
 export interface ReviewIssueSample {
@@ -80,7 +85,7 @@ export function loadGameHistory(): GameHistoryEntry[] {
   }
 }
 
-export function saveUnfinishedGame(state: GameState): void {
+export function saveUnfinishedGame(state: GameState, options?: GameSessionOptions): void {
   if (state.phase === 'finished') {
     clearUnfinishedGame()
     return
@@ -90,6 +95,7 @@ export function saveUnfinishedGame(state: GameState): void {
     state,
     stableEventSequence: state.events.length === 0 ? 0 : state.events[state.events.length - 1].sequence,
     savedAt: Date.now(),
+    options,
   }
   try {
     storage()?.setItem(GAME_SAVE_KEY, JSON.stringify(value))
@@ -148,6 +154,7 @@ function isGameSave(value: unknown): value is GameSave {
     return false
   const candidate = value as Partial<GameSave>
   const state = candidate.state as Partial<GameState> | undefined
+  const options = candidate.options as Partial<GameSessionOptions> | undefined
   return candidate.schemaVersion === GAME_SAVE_SCHEMA_VERSION
     && typeof candidate.stableEventSequence === 'number'
     && typeof candidate.savedAt === 'number'
@@ -157,4 +164,5 @@ function isGameSave(value: unknown): value is GameSave {
     && Array.isArray(state.wall)
     && typeof state.phase === 'string'
     && typeof state.nextEventSequence === 'number'
+    && (options === undefined || (options !== null && typeof options.timedTraining === 'boolean'))
 }

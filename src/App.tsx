@@ -15,9 +15,13 @@ function App() {
   const [page, setPage] = useState<Page>('home')
   const [seed, setSeed] = useState(nextSeed)
   const [savedGame, setSavedGame] = useState<GameState | null>(null)
+  const [timedTraining, setTimedTraining] = useState(false)
 
   useEffect(() => {
-    setSavedGame(loadUnfinishedGame()?.state ?? null)
+    const saved = loadUnfinishedGame()
+    setSavedGame(saved?.state ?? null)
+    if (saved !== null)
+      setTimedTraining(saved.options?.timedTraining ?? false)
   }, [page])
 
   const startGame = () => {
@@ -34,7 +38,7 @@ function App() {
   }
 
   if (page === 'game')
-    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} onHome={() => setPage('home')} onNewGame={startGame} />
+    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} onHome={() => setPage('home')} onNewGame={startGame} />
 
   return (
     <div className="home-page min-h-screen w-full relative">
@@ -66,6 +70,17 @@ function App() {
             <span>你</span>
           </div>
           <div className="battle-actions">
+            <label className="pregame-option">
+              <input
+                type="checkbox"
+                checked={timedTraining}
+                onChange={event => setTimedTraining(event.target.checked)}
+              />
+              <span>
+                <strong>思考计时训练</strong>
+                <small>{timedTraining ? '出牌 15 秒 · 响应 8 秒' : '自由思考 · 不自动代打'}</small>
+              </span>
+            </label>
             {savedGame !== null && <button className="primary-action battle-start" onClick={continueGame}>继续牌局</button>}
             <button className="secondary-action battle-start" onClick={startGame}>开始新局</button>
           </div>

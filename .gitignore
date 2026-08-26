@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Copyrighted/private reading notes. Keep local only; never commit source excerpts.
+docs/theory/private/
 .env
 .env.*
 

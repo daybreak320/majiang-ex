@@ -2,17 +2,20 @@ import type { GameHistoryEntry } from '../game/persistence'
 import type { GameState, LegalAction, PlayerId, TileInstance } from '../game/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
+import { buildDiscardAssistant } from '../game/assistant'
 import { createInitialGame, recommendDingque } from '../game/core'
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
 import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildHistoryEntry, buildHistoryInsight, buildSettlementSummary, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
-import { shouldAdvanceAI } from '../game/ui'
+import { buildStrategicReminder } from '../game/strategy'
+import { getTurnTimerDuration, shouldAdvanceAI } from '../game/ui'
 import { analyzeGame } from '../review/analyzer'
 import { MajiangTile } from './MajiangTile'
 
 interface SichuanGameProps {
   seed: number
   restoredState?: GameState
+  timedTraining: boolean
   onHome: () => void
   onNewGame: () => void
 }
@@ -152,6 +155,104 @@ function actionLabel(action: Exclude<LegalAction, { type: 'discard' | 'dingque' 
     return `碰 ${tileLabel(state.responseWindow!.tile)}`
   const tile = state.players[0].hand.find(candidate => candidate.id === action.tileId) ?? state.responseWindow?.tile
   return `${MELD_LABELS[action.kind]} ${tile ? tileLabel(tile) : ''}`
+}
+
+function probabilityLabel(probability: number | null): string {
+  return probability === null ? '未下叫' : `${(probability * 100).toFixed(1)}%`
+}
+
+const STRATEGY_POSTURE_LABEL = {
+  retreat: '劣势快跑',
+  steady: '先稳住',
+  press: '优势继续贪',
+} as const
+
+function StrategicReminderPanel({ state }: { state: GameState }) {
+  const reminder = useMemo(() => buildStrategicReminder(state), [state])
+  return (
+    <section className={`strategy-reminder strategy-${reminder.posture}`} aria-label="战略提醒">
+      <div className="strategy-heading">
+        <span>战略提醒</span>
+        <strong>{STRATEGY_POSTURE_LABEL[reminder.posture]}</strong>
+      </div>
+      <div className="strategy-copy">
+        <b>{reminder.title}</b>
+        <p>{reminder.summary}</p>
+      </div>
+      <div className="strategy-signals">
+        {reminder.signals.map(signal => <span key={signal}>{signal}</span>)}
+      </div>
+    </section>
+  )
+}
+
+function AssistantPanel({ state }: { state: GameState }) {
+  const analysis = useMemo(() => buildDiscardAssistant(state), [state])
+  return (
+    <section className="assistant-panel" aria-label="实时出牌助手">
+      <div className="assistant-recommendation">
+        <span>推荐动作</span>
+        <strong>{analysis.recommendationLabel}</strong>
+        <p>{analysis.reason}</p>
+      </div>
+      <div className="assistant-probability">
+        <span>下一张直接胡牌</span>
+        <strong>{probabilityLabel(analysis.nextDrawWinProbability)}</strong>
+        <small>
+          活张
+          {' '}
+          {analysis.opportunity}
+          {' / '}
+          未知牌
+          {' '}
+          {analysis.unknownTiles}
+        </small>
+        <div className="assistant-waits">
+          {analysis.waits.length === 0
+            ? <span>暂无有效叫口</span>
+            : analysis.waits.map(wait => (
+                <span key={`${wait.tile.type}-${wait.tile.value}`}>
+                  {wait.tile.value}
+                  {wait.tile.type}
+                  {' '}
+                  {wait.remaining}
+                  张 ·
+                  {' '}
+                  {(wait.probability * 100).toFixed(1)}
+                  %
+                </span>
+              ))}
+        </div>
+      </div>
+      <div className="assistant-known">
+        <div className="assistant-known-heading">
+          <span>已知牌分布</span>
+          <small>
+            已知
+            {' '}
+            {analysis.knownTiles}
+            {' · 牌墙 '}
+            {analysis.wallTiles}
+          </small>
+        </div>
+        {(['万', '条', '筒'] as const).map(type => (
+          <div className="known-suit-row" key={type}>
+            <b>{type}</b>
+            {Array.from({ length: 9 }, (_, index) => {
+              const value = index + 1
+              const count = analysis.knownTileCounts.find(item => item.tile.type === type && item.tile.value === value)?.count ?? 0
+              return (
+                <span className={count === 4 ? 'exhausted' : ''} key={value}>
+                  <i>{value}</i>
+                  <small>{count}</small>
+                </span>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function SettlementPage({ state, history, onHome, onNewGame }: { state: GameState, history: GameHistoryEntry[], onHome: () => void, onNewGame: () => void }) {
@@ -530,13 +631,14 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
   )
 }
 
-export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanGameProps) {
+export function SichuanGame({ seed, restoredState, timedTraining, onHome, onNewGame }: SichuanGameProps) {
   const [state, setState] = useState(() => restoredState ?? createInitialGame(seed))
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
   const [thinking, setThinking] = useState<PlayerId | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [paused, setPaused] = useState(false)
+  const [assistantEnabled, setAssistantEnabled] = useState(false)
   const stateRef = useRef(state)
   const scheduleToken = useRef(0)
   const pausedRef = useRef(false)
@@ -567,11 +669,11 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
     setSelectedTileId(null)
     stateRef.current = result.nextState
     setState(result.nextState)
-    saveUnfinishedGame(result.nextState)
+    saveUnfinishedGame(result.nextState, { timedTraining })
   }
 
   useEffect(() => {
-    saveUnfinishedGame(state)
+    saveUnfinishedGame(state, { timedTraining })
   }, [])
 
   useEffect(() => {
@@ -579,7 +681,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
       const hidden = document.visibilityState !== 'visible'
       if (hidden) {
         scheduleToken.current++
-        saveUnfinishedGame(stateRef.current)
+        saveUnfinishedGame(stateRef.current, { timedTraining })
       }
       setPaused(hidden)
       if (!hidden)
@@ -587,7 +689,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
     }
     const handlePageLeave = () => {
       scheduleToken.current++
-      saveUnfinishedGame(stateRef.current)
+      saveUnfinishedGame(stateRef.current, { timedTraining })
     }
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('pagehide', handlePageLeave)
@@ -605,7 +707,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
       pausedRef.current = next
       scheduleToken.current++
       if (next) {
-        saveUnfinishedGame(stateRef.current)
+        saveUnfinishedGame(stateRef.current, { timedTraining })
         setRemainingSeconds(null)
       }
       return next
@@ -613,13 +715,13 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
   }
 
   useEffect(() => {
-    if (!((state.phase === 'discarding' && state.currentPlayer === 0) || (state.phase === 'responding' && state.responseWindow?.eligiblePlayers.includes(0) && state.responseWindow.choices[0] === undefined))) {
+    const duration = getTurnTimerDuration(state, timedTraining)
+    if (duration === null) {
       setRemainingSeconds(null)
       return
     }
-    setRemainingSeconds(state.phase === 'discarding' ? 15 : 8)
+    setRemainingSeconds(duration)
     const startedAt = Date.now()
-    const duration = state.phase === 'discarding' ? 15 : 8
     const timeout = window.setInterval(() => {
       if (pausedRef.current)
         return
@@ -634,13 +736,13 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
           if (result.ok) {
             stateRef.current = result.nextState
             setState(result.nextState)
-            saveUnfinishedGame(result.nextState)
+            saveUnfinishedGame(result.nextState, { timedTraining })
           }
         }
       }
     }, 250)
     return () => window.clearInterval(timeout)
-  }, [paused, state])
+  }, [paused, state, timedTraining])
 
   useEffect(() => {
     if (paused || !shouldAdvanceAI(state))
@@ -661,7 +763,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
         return
       stateRef.current = advanced.state
       setState(advanced.state)
-      saveUnfinishedGame(advanced.state)
+      saveUnfinishedGame(advanced.state, { timedTraining })
       setThinking(null)
       setSelectedTileId(null)
     }, 350 + Math.abs(state.nextEventSequence * 73 + seed) % 301)
@@ -683,7 +785,7 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
   }
 
   const leaveGame = () => {
-    saveUnfinishedGame(stateRef.current)
+    saveUnfinishedGame(stateRef.current, { timedTraining })
     onHome()
   }
 
@@ -706,8 +808,16 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
           </strong>
         </div>
         <div>
+          <label className="assistant-toggle">
+            <input
+              type="checkbox"
+              checked={assistantEnabled}
+              onChange={event => setAssistantEnabled(event.target.checked)}
+            />
+            <span>出牌助手</span>
+          </label>
           {paused && <span className="turn-timer">已暂停</span>}
-          {!paused && remainingSeconds !== null && (
+          {timedTraining && !paused && remainingSeconds !== null && (
             <span className={`turn-timer ${remainingSeconds < 5 ? 'warning' : ''}`}>
               {state.phase === 'discarding' ? '出牌' : '响应'}
               剩余
@@ -720,6 +830,8 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
           <button className="secondary-action compact" onClick={abandonGame}>放弃牌局</button>
         </div>
       </header>
+      <StrategicReminderPanel state={state} />
+      {assistantEnabled && <AssistantPanel state={state} />}
       <div className="table-grid">
         {[1, 2, 3].map(id => <PlayerPanel key={id} state={state} playerId={id as PlayerId} thinking={thinking} />)}
         <section className="table-center">
@@ -730,14 +842,6 @@ export function SichuanGame({ seed, restoredState, onHome, onNewGame }: SichuanG
           </div>
           <p>{state.phase === 'dingque' ? '定缺阶段' : state.phase === 'responding' ? '响应阶段' : `${PLAYER_NAMES[state.currentPlayer]}行动`}</p>
           <div className="latest-event">{formatGameEvent(state.events[state.events.length - 1])}</div>
-          <div className="all-rivers">
-            {state.players.map(player => (
-              <div key={player.id}>
-                <b>{PLAYER_NAMES[player.id]}</b>
-                {player.discards.slice(-8).map(tile => <MiniTile key={tile.id} tile={tile} />)}
-              </div>
-            ))}
-          </div>
         </section>
         <SouthPlayerPanel
           state={state}

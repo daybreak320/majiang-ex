@@ -184,7 +184,7 @@ function buildReasons(tile: Tile, opportunityTotal: number, waits: CandidateAnal
 function analyzeCandidate(tile: Tile, hand: Tile[]): CandidateAnalysis {
   const remaining = removeOneTile(hand, tile)
   const opportunity = countOpportunities(remaining)
-  const waitShape = classifyWaitShape(opportunity.waits)
+  const waitShape = classifyWaitShape(remaining, opportunity.structuralWaits)
   const brokeCombos = brokenStrongCombos(hand, tile)
   const shape = evaluateRemainingShape(remaining)
 

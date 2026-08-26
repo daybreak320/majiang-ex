@@ -20,3 +20,16 @@ export function shouldAdvanceAI(state: GameState): boolean {
     return state.responseWindow?.eligiblePlayers.some(playerId => playerId !== 0 && state.responseWindow?.choices[playerId] === undefined) === true
   return state.phase === 'discarding' && state.currentPlayer !== 0
 }
+
+export function getTurnTimerDuration(state: GameState, timedTraining: boolean): number | null {
+  if (!timedTraining)
+    return null
+  if (state.phase === 'discarding' && state.currentPlayer === 0)
+    return 15
+  if (state.phase === 'responding'
+    && state.responseWindow?.eligiblePlayers.includes(0) === true
+    && state.responseWindow.choices[0] === undefined) {
+    return 8
+  }
+  return null
+}

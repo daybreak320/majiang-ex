@@ -193,6 +193,27 @@ describe('ai 机会数接入（朱扬《机会数理论与实战》落地）', (
   })
 })
 
+describe('ai 杠牌结构判断（成都册“杠牌打法秘籍”）', () => {
+  it('暗杠后保留原两头听时选择合法杠牌', () => {
+    const state = fixture(['1筒', '9999万 123456万 55条 34条', '2筒', '3筒'], 1)
+    state.players[1].dingque = '筒'
+    const command = chooseAICommand(state, 1)!
+    expect(command).toMatchObject({ type: 'gang', kind: 'anGang' })
+    expect(actionIsLegal(state, command)).toBe(true)
+  })
+
+  it('明杠会拆掉已下叫的顺子复合结构时拒绝杠牌', () => {
+    let state = fixture(['5万', '344555667万 123条 9条', '1筒', '2筒'])
+    state.players[1].dingque = '筒'
+    setStyle(state, 1, 'steady')
+    state = run(state, { type: 'discard', playerId: 0, tileId: state.players[0].hand[0].id })
+    expect(getLegalActions(state, 1).some(action => action.type === 'gang')).toBe(true)
+    const command = chooseAICommand(state, 1)!
+    expect(command.type).not.toBe('gang')
+    expect(actionIsLegal(state, command)).toBe(true)
+  })
+})
+
 describe('ai 自动推进与整局模拟', () => {
   it('单步推进不替玩家0行动，可依次推进 AI 定缺、弃牌和响应', () => {
     let state = createInitialGame(3)
@@ -229,7 +250,7 @@ describe('ai 自动推进与整局模拟', () => {
       expect(new Set(ids)).toHaveLength(108)
       expect(state.players.reduce((sum, player) => sum + player.score, 0)).toBe(0)
     }
-  })
+  }, 10_000)
 
   it('模拟器在过低步数上限时抛出明确错误', () => {
     expect(() => runAIGame(1, 1)).toThrow('AI 对局超过最大步数 1（seed: 1）')

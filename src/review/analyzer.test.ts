@@ -177,7 +177,7 @@ describe('analyzeDiscardDecision · 攻防', () => {
     expect(report.issues.some(i => i.kind === 'attackDefense')).toBe(true)
   })
 
-  it('熟张（牌河已有同牌）安全分为 1，不误报', () => {
+  it('跟下家熟张获得 0.9 安全分，不误报', () => {
     const hand = parseHand('123万 456万 789万 55万 3条 7条 6筒')
     const discarded = hand.find(t => t.type === '筒' && t.value === 6)!
     const visible = [tile('筒', 6)]
@@ -187,7 +187,7 @@ describe('analyzeDiscardDecision · 攻防', () => {
       discarded,
       10,
     )
-    expect(decision.safety).toBe(1)
+    expect(decision.safety).toBe(0.9)
     const report = buildReport(0, [decision])
     expect(report.issues.some(i => i.kind === 'attackDefense')).toBe(false)
   })

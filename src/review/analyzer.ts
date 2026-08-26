@@ -2,9 +2,9 @@ import type { GameEvent, GameStateSnapshot, PlayerId, TileInstance } from '../ga
 import type { Tile, TileType } from '../types'
 import type { DiscardDecision, ReviewHighlight, ReviewIssue, ReviewReport } from './types'
 import {
+  assessDiscardSafety,
   brokenStrongCombos,
   countOpportunities,
-  safetyScore,
 } from '../knowledge/mahjongTheory'
 
 /** 机会数损失阈值：损失 ≥ 4 个有效进张即判定为牌效失误（朱扬：机会数是牌效核心指标） */
@@ -17,10 +17,6 @@ export const LATE_GAME_WALL = 40
 export const HIGHLIGHT_MIN_OPPORTUNITY = 8
 
 const tileLabel = (tile: Tile) => `${tile.type}${tile.value}`
-
-function isShouZhang(visible: readonly Tile[], tile: Tile): boolean {
-  return visible.some(candidate => candidate.type === tile.type && candidate.value === tile.value)
-}
 
 /** 受定缺约束的可打候选：手牌仍含缺门牌时，只能在缺门内选择（血战到底规则） */
 function legalDiscardCandidates(hand: readonly TileInstance[], dingque: TileType | null): TileInstance[] {
@@ -76,7 +72,26 @@ export function analyzeDiscardDecision(
   const opportunityActual = evaluable ? opportunityOf(discarded) : 0
 
   const isLateGame = snapshot.wall.length <= LATE_GAME_WALL
-  const safety = safetyScore(discarded.value, isShouZhang(visible, discarded), isLateGame)
+  const upper = snapshot.players[(playerId + 3) % 4 as PlayerId]
+  const opposite = snapshot.players[(playerId + 2) % 4 as PlayerId]
+  const lower = snapshot.players[(playerId + 1) % 4 as PlayerId]
+  const activeOpponents = snapshot.players.filter(opponent => opponent.id !== playerId && !opponent.hasWon)
+  const wasDiscarded = (opponent: typeof upper) => opponent.discards
+    .some(tile => tile.type === discarded.type && tile.value === discarded.value)
+  // 来源：成都册第二章第三节、第三章“进攻、防守与综合”及“实用小技巧”。
+  const safety = assessDiscardSafety({
+    value: discarded.value,
+    isLateGame,
+    familiarBy: {
+      upper: wasDiscarded(upper),
+      opposite: wasDiscarded(opposite),
+      lower: wasDiscarded(lower),
+    },
+    opponentMeldCount: activeOpponents.reduce((sum, opponent) => sum + opponent.melds.length, 0),
+    sameSuitOpponentMeldCount: activeOpponents.reduce((sum, opponent) =>
+      sum + opponent.melds.filter(meld => meld.tiles[0]?.type === discarded.type).length, 0),
+    dingqueOpponentCount: activeOpponents.filter(opponent => opponent.dingque === discarded.type).length,
+  }).score
   const combos = brokenStrongCombos(handBefore, discarded)
 
   return {

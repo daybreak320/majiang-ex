@@ -22,9 +22,10 @@ describe('game persistence', () => {
     const result = executeCommand(initial, { type: 'dingque', playerId: 0, tileType: '万' })
     if (!result.ok)
       throw new Error(result.error)
-    saveUnfinishedGame(result.nextState)
+    saveUnfinishedGame(result.nextState, { timedTraining: true })
     expect(loadUnfinishedGame()?.state).toEqual(result.nextState)
     expect(loadUnfinishedGame()?.stableEventSequence).toBe(result.nextState.events.length)
+    expect(loadUnfinishedGame()?.options).toEqual({ timedTraining: true })
   })
 
   it('removes corrupt, incompatible, invalid or unstable saves', () => {
@@ -51,5 +52,11 @@ describe('game persistence', () => {
     saveUnfinishedGame({ ...state, phase: 'finished' })
     clearUnfinishedGame()
     expect(loadUnfinishedGame()).toBeNull()
+  })
+
+  it('兼容没有会话设置的旧存档', () => {
+    const state = createInitialGame(789)
+    saveUnfinishedGame(state)
+    expect(loadUnfinishedGame()?.options).toBeUndefined()
   })
 })
