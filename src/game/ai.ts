@@ -9,7 +9,12 @@ import type {
   PlayerId,
   TileInstance,
 } from './types'
-import { countOpportunities, rateOpportunity } from '../knowledge/mahjongTheory'
+import {
+  assessDiscardSafety,
+  assessGangStructure,
+  countOpportunities,
+  rateOpportunity,
+} from '../knowledge/mahjongTheory'
 import { compareTiles, createInitialGame, recommendDingque } from './core'
 import { executeCommand, getLegalActions } from './engine'
 import { MILESTONE_1_RULES } from './rules'
@@ -156,24 +161,26 @@ function structureScore(tiles: readonly TileInstance[], style: AIStyle): number 
 }
 
 function publicDanger(view: AIView, tile: TileInstance): number {
-  const visible = [
-    ...view.self.hand,
-    ...view.players.flatMap(player => [...player.discards, ...player.melds.flatMap(meld => meld.tiles)]),
-  ].filter(candidate => candidate.type === tile.type && candidate.value === tile.value).length
-  let danger = Math.max(0, 4 - visible) * 0.5
-  for (const opponent of view.players) {
-    if (opponent.id === view.self.id || opponent.hasWon)
-      continue
-    if (opponent.dingque === tile.type)
-      danger -= 1.5
-    const suitMelds = opponent.melds.filter(meld => meld.tiles[0]?.type === tile.type).length
-    const sameMeld = opponent.melds.some(meld => meld.tiles[0]?.type === tile.type && meld.tiles[0]?.value === tile.value)
-    const sameDiscards = opponent.discards.filter(discard => discard.type === tile.type && discard.value === tile.value).length
-    danger += suitMelds * 1.25 + opponent.melds.length * 0.4 - sameDiscards * 0.75
-    if (sameMeld)
-      danger -= 2
-  }
-  return Math.max(0, danger)
+  const upper = view.players[(view.self.id + 3) % 4 as PlayerId]
+  const opposite = view.players[(view.self.id + 2) % 4 as PlayerId]
+  const lower = view.players[(view.self.id + 1) % 4 as PlayerId]
+  const activeOpponents = view.players.filter(opponent => opponent.id !== view.self.id && !opponent.hasWon)
+  const wasDiscarded = (opponent: AIPlayerView) => opponent.discards
+    .some(discard => discard.type === tile.type && discard.value === tile.value)
+  // 来源：成都册第二章第三节、第三章“进攻、防守与综合”及“实用小技巧”。
+  return assessDiscardSafety({
+    value: tile.value,
+    isLateGame: view.wallRemaining <= 40,
+    familiarBy: {
+      upper: wasDiscarded(upper),
+      opposite: wasDiscarded(opposite),
+      lower: wasDiscarded(lower),
+    },
+    opponentMeldCount: activeOpponents.reduce((sum, opponent) => sum + opponent.melds.length, 0),
+    sameSuitOpponentMeldCount: activeOpponents.reduce((sum, opponent) =>
+      sum + opponent.melds.filter(meld => meld.tiles[0]?.type === tile.type).length, 0),
+    dingqueOpponentCount: activeOpponents.filter(opponent => opponent.dingque === tile.type).length,
+  }).danger * 4
 }
 
 function compareActions(a: LegalAction, b: LegalAction): number {
@@ -206,6 +213,121 @@ function publicVisible(view: AIView): Tile[] {
   return view.players.flatMap(player => [...player.discards, ...player.melds.flatMap(meld => meld.tiles)])
 }
 
+interface GangProjection {
+  hand: TileInstance[]
+  melds: Meld[]
+  newlyVisible: TileInstance[]
+}
+
+function projectGang(state: GameState, playerId: PlayerId, action: Extract<LegalAction, { type: 'gang' }>): GangProjection | null {
+  const player = state.players[playerId]
+  if (action.kind === 'anGang') {
+    const selected = player.hand.find(tile => tile.id === action.tileId)
+    if (selected === undefined)
+      return null
+    const gangTiles = player.hand.filter(tile => tile.type === selected.type && tile.value === selected.value)
+    if (gangTiles.length !== 4)
+      return null
+    const ids = new Set(gangTiles.map(tile => tile.id))
+    return {
+      hand: player.hand.filter(tile => !ids.has(tile.id)),
+      melds: [...player.melds, { kind: 'anGang', tiles: gangTiles, fromPlayer: null }],
+      newlyVisible: gangTiles,
+    }
+  }
+
+  if (action.kind === 'buGang') {
+    const selected = player.hand.find(tile => tile.id === action.tileId)
+    if (selected === undefined)
+      return null
+    const meldIndex = player.melds.findIndex(meld =>
+      meld.kind === 'peng' && meld.tiles[0]?.type === selected.type && meld.tiles[0]?.value === selected.value)
+    if (meldIndex < 0)
+      return null
+    const melds = player.melds.map((meld, index): Meld => index === meldIndex
+      ? { ...meld, kind: 'buGang', tiles: [...meld.tiles, selected] }
+      : meld)
+    return {
+      hand: player.hand.filter(tile => tile.id !== selected.id),
+      melds,
+      newlyVisible: [selected],
+    }
+  }
+
+  const called = state.responseWindow?.tile
+  if (called === undefined)
+    return null
+  const matching = player.hand
+    .filter(tile => tile.type === called.type && tile.value === called.value)
+    .slice(0, 3)
+  if (matching.length !== 3)
+    return null
+  const ids = new Set(matching.map(tile => tile.id))
+  return {
+    hand: player.hand.filter(tile => !ids.has(tile.id)),
+    melds: [...player.melds, { kind: 'mingGang', tiles: [...matching, called], fromPlayer: state.responseWindow!.sourcePlayer }],
+    newlyVisible: matching,
+  }
+}
+
+function bestReferenceOpportunity(
+  state: GameState,
+  playerId: PlayerId,
+  legal: readonly LegalAction[],
+  visible: readonly Tile[],
+): { total: number, structuralWaits: number } {
+  const player = state.players[playerId]
+  if (state.phase === 'responding') {
+    const opportunity = countOpportunities(player.hand, visible, {
+      dingque: player.dingque,
+      melds: player.melds,
+    })
+    return { total: opportunity.total, structuralWaits: opportunity.structuralWaits.length }
+  }
+
+  let best = { total: 0, structuralWaits: 0 }
+  for (const action of legal) {
+    if (action.type !== 'discard')
+      continue
+    const opportunity = countOpportunities(
+      player.hand.filter(tile => tile.id !== action.tileId),
+      visible,
+      { dingque: player.dingque, melds: player.melds },
+    )
+    if (opportunity.total > best.total
+      || (opportunity.total === best.total && opportunity.structuralWaits.length > best.structuralWaits)) {
+      best = { total: opportunity.total, structuralWaits: opportunity.structuralWaits.length }
+    }
+  }
+  return best
+}
+
+function chooseStructurePreservingGang(
+  state: GameState,
+  playerId: PlayerId,
+  legal: readonly LegalAction[],
+): Extract<LegalAction, { type: 'gang' }> | undefined {
+  const gangs = legal
+    .filter((action): action is Extract<LegalAction, { type: 'gang' }> => action.type === 'gang')
+    .sort(compareActions)
+  if (gangs.length === 0)
+    return undefined
+  const visible = publicVisible(buildAIView(state, playerId))
+  const reference = bestReferenceOpportunity(state, playerId, legal, visible)
+  // 来源：成都册“杠牌打法秘籍”；机会数损失基准来自第二章第一节。
+  return gangs.find((gang) => {
+    const projection = projectGang(state, playerId, gang)
+    if (projection === null)
+      return false
+    return assessGangStructure(projection.hand, projection.melds, {
+      dingque: state.players[playerId].dingque,
+      visible: [...visible, ...projection.newlyVisible],
+      referenceOpportunity: reference.total,
+      referenceStructuralWaits: reference.structuralWaits,
+    }).preservesStructure
+  })
+}
+
 function chooseDiscard(state: GameState, playerId: PlayerId, actions: Extract<LegalAction, { type: 'discard' }>[]): LegalAction {
   const view = buildAIView(state, playerId)
   const style = view.self.aiStyle
@@ -227,7 +349,7 @@ function chooseDiscard(state: GameState, playerId: PlayerId, actions: Extract<Le
 function chooseResponse(state: GameState, playerId: PlayerId, legal: LegalAction[]): LegalAction {
   const player = state.players[playerId]
   const style = player.aiStyle ?? 'efficient'
-  const gang = legal.filter((action): action is Extract<LegalAction, { type: 'gang' }> => action.type === 'gang').sort(compareActions)[0]
+  const gang = chooseStructurePreservingGang(state, playerId, legal)
   if (gang !== undefined)
     return gang
 
@@ -265,9 +387,9 @@ export function chooseAICommand(state: GameState, playerId: PlayerId): GameComma
   if (state.phase === 'responding')
     return { ...chooseResponse(state, playerId, legal), playerId }
 
-  const gangs = legal.filter((action): action is Extract<LegalAction, { type: 'gang' }> => action.type === 'gang').sort(compareActions)
-  if (gangs.length > 0)
-    return { ...gangs[0], playerId }
+  const gang = chooseStructurePreservingGang(state, playerId, legal)
+  if (gang !== undefined)
+    return { ...gang, playerId }
   const discards = legal.filter((action): action is Extract<LegalAction, { type: 'discard' }> => action.type === 'discard')
   return discards.length === 0 ? null : { ...chooseDiscard(state, playerId, discards), playerId }
 }
