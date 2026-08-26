@@ -4,5 +4,6 @@ import viteConfig from './vite.config.mts'
 export default mergeConfig(viteConfig, defineConfig({
   test: {
     globals: true,
+    testTimeout: 15_000,
   },
 }))

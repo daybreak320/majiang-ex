@@ -1,5 +1,7 @@
+import type { ReviewReport } from '../review/types'
 import type { GameHistoryEntry, ReviewIssueSample } from './persistence'
 import type { GameCommand, GameEvent, GameState, MeldKind, PlayerId, ScoreReason, TileInstance } from './types'
+import { REVIEW_ALGORITHM_VERSION } from '../review/analyzer'
 import { chooseAICommand, getAIReason } from './ai'
 import { createInitialGame } from './core'
 
@@ -297,6 +299,42 @@ export function buildHistoryEntry(state: GameState, review: GameReview): GameHis
     decisionsReasonable: allRatings.filter(rating => rating === '合理').length,
     decisionsImprovable: allRatings.filter(rating => rating === '可改进').length,
     issues,
+  }
+}
+
+/** 将朱扬理论复盘报告投影为近三局统计所需的历史摘要。 */
+export function buildTheoryHistoryEntry(state: GameState, report: ReviewReport): GameHistoryEntry {
+  const summary = buildSettlementSummary(state)
+  const self = summary.players.find(player => player.playerId === 0)
+  const issueBySequence = new Map(report.decisions.map(decision => [decision.sequence, decision]))
+  const issues: ReviewIssueSample[] = report.summary.majorIssues.map((issue) => {
+    const decision = issueBySequence.get(issue.sequence)
+    return {
+      title: issue.title,
+      actual: decision === undefined ? '出牌' : `打出${decision.tile.value}${decision.tile.type}`,
+      recommended: decision === undefined || decision.bestTiles.length === 0
+        ? '理论建议'
+        : decision.bestTiles.slice(0, 2).map(tile => `打出${tile.value}${tile.type}`).join('、'),
+      reason: issue.detail,
+    }
+  })
+  const improvable = report.issues.length
+  const excellent = report.highlights.length
+  const reasonable = Math.max(0, report.stats.decisions - improvable - excellent)
+  return {
+    finishedAt: Date.now(),
+    seed: state.seed,
+    endReason: summary.endReason,
+    score: self?.score ?? 0,
+    rank: self?.rank ?? 0,
+    hasWon: self?.hasWon ?? false,
+    winFan: self?.winFan ?? null,
+    dealtIn: self?.dealtIn ?? 0,
+    decisionsExcellent: excellent,
+    decisionsReasonable: reasonable,
+    decisionsImprovable: improvable,
+    issues,
+    reviewAlgorithmVersion: REVIEW_ALGORITHM_VERSION,
   }
 }
 
