@@ -122,6 +122,7 @@ describe('弃牌响应与摸牌', () => {
 
   it('碰会移动牌河实体并让响应者直接出牌', () => {
     let state = fixture(['5万', '55万', '1万', '2万'])
+    state.players[1].dingque = '条'
     const discarded = state.players[0].hand[0]
     state = run(state, { type: 'discard', playerId: 0, tileId: discarded.id })
     state = run(state, { type: 'peng', playerId: 1, tileId: discarded.id })
@@ -130,6 +131,20 @@ describe('弃牌响应与摸牌', () => {
     expect(state.players[1].melds[0]).toMatchObject({ kind: 'peng', fromPlayer: 0 })
     expect(new Set(entityIds(state)).size).toBe(entityIds(state).length)
     expect(entityIds(state)).toHaveLength(108)
+  })
+
+  it('定缺未清时只允许过，不允许碰或明杠', () => {
+    const state = fixture(['5万', '55万 1条', '1万', '2万'])
+    state.players[1].dingque = '条'
+    const discarded = state.players[0].hand[0]
+    state.phase = 'responding'
+    state.responseWindow = {
+      kind: 'discard', sourcePlayer: 0, tile: discarded, eligiblePlayers: [1], choices: {},
+      resumePlayer: 0, pendingMeldIndex: null, sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+    }
+
+    expect(getLegalActions(state, 1)).toEqual([{ type: 'pass' }])
+    expect(executeCommand(state, { type: 'peng', playerId: 1, tileId: discarded.id })).toMatchObject({ ok: false, error: '非法动作' })
   })
 
   it('明杠由点杠者支付2分并补摸', () => {

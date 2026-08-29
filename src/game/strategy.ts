@@ -30,6 +30,14 @@ interface SuitPush {
   count: number
 }
 
+export interface OpponentThreat {
+  playerId: PlayerId
+  position: string
+  targetType: TileType
+  meldCount: number
+  hasClearedDingque: boolean
+}
+
 const EMPTY_OPPORTUNITY: OpportunityResult = { total: 0, waits: [], structuralWaits: [] }
 
 function publicTiles(state: GameState): TileInstance[] {
@@ -128,6 +136,36 @@ function oppositeSuitPush(state: GameState, playerId: PlayerId, targetType: Tile
   return { playerId: oppositeId, shedType, count: recent.length }
 }
 
+// 引擎按逆时针轮转：玩家 1 是你的上家，玩家 3 是你的下家；必须与桌面相对位置区分。
+const PLAYER_POSITIONS: Record<PlayerId, string> = {
+  0: '你',
+  1: '上家',
+  2: '对家',
+  3: '下家',
+}
+
+/** 仅用公开副露、定缺与弃牌判断“睡宽床 / 清一色”危险，不读取对手暗牌。 */
+export function detectOpponentThreats(state: GameState, playerId: PlayerId = 0): OpponentThreat[] {
+  return state.players.flatMap((opponent): OpponentThreat[] => {
+    if (opponent.id === playerId || opponent.hasWon || opponent.dingque === null || opponent.melds.length < 2)
+      return []
+    const meldTiles = opponent.melds.flatMap(meld => meld.tiles)
+    const targetType = meldTiles[0]?.type
+    if (targetType === undefined || targetType === opponent.dingque || meldTiles.some(tile => tile.type !== targetType))
+      return []
+    const hasClearedDingque = opponent.discards.some(tile => tile.type === opponent.dingque)
+    if (!hasClearedDingque)
+      return []
+    return [{
+      playerId: opponent.id,
+      position: PLAYER_POSITIONS[opponent.id],
+      targetType,
+      meldCount: opponent.melds.length,
+      hasClearedDingque,
+    }]
+  })
+}
+
 function lowValueDiscardWin(state: GameState, playerId: PlayerId, opportunity: OpportunityResult): boolean {
   const window = state.responseWindow
   if (state.phase !== 'responding'
@@ -163,6 +201,20 @@ export function buildStrategicReminder(state: GameState, playerId: PlayerId = 0)
   }
 
   const opportunity = opportunityAfterBestDiscard(state, playerId)
+  const threats = detectOpponentThreats(state, playerId)
+
+  // “睡宽床”已副露两组且清掉定缺：公开结构足以构成优先级最高的防守信号。
+  if (threats.length > 0) {
+    const threat = threats.sort((a, b) => b.meldCount - a.meldCount)[0]
+    return {
+      posture: 'retreat',
+      title: `危险快跑 · ${threat.position}睡宽床`,
+      summary: `${threat.position}已清${state.players[threat.playerId].dingque}并副露${threat.meldCount}组${threat.targetType}，公开牌型高度集中，疑似在做清一色或大牌。立即优先下叫、打缺；非必要不喂${threat.targetType}。`,
+      signals: [`${threat.position}已副露${threat.meldCount}组${threat.targetType}`, `已清定缺${state.players[threat.playerId].dingque}`, `防守：慎打${threat.targetType}`],
+      recommendedAction: null,
+      source: '成都册第三章攻防、第四章清一色；公开副露危险信号',
+    }
+  }
 
   // 来源：知识库 3.3“为自摸创造条件”与 4.2 中残局取舍；仅提醒，不自动过胡。
   if (lowValueDiscardWin(state, playerId, opportunity)) {
@@ -193,13 +245,13 @@ export function buildStrategicReminder(state: GameState, playerId: PlayerId = 0)
   }
 
   const sameDingque = state.players.filter(candidate => !candidate.hasWon && candidate.dingque === player.dingque).length
-  // 来源：成都册第一章成都麻将节奏与知识库 4.4；“坐庄且三家同缺”按用户需求作快胡启发式。
-  if (state.dealer === playerId && sameDingque >= 3) {
+  // 三家同缺本身已压缩剩余两门的进张空间；坐庄进一步放大速度风险，但不是必要条件。
+  if (sameDingque >= 3) {
     return {
       posture: 'retreat',
-      title: '劣势快跑 · 同缺拥挤',
-      summary: `${sameDingque} 家都缺${player.dingque}且你坐庄，剩余两门竞争拥挤；降低做大目标，优先打缺、下叫和止损。`,
-      signals: [`${sameDingque} 家同缺${player.dingque}`, '你是庄家', '先速度后番数'],
+      title: '劣势快跑 · 三家同缺',
+      summary: `${sameDingque} 家都缺${player.dingque}，剩余两门竞争拥挤${state.dealer === playerId ? '，且你坐庄更怕被先和' : ''}；停止追大牌，优先打缺、下叫和止损。`,
+      signals: [`${sameDingque} 家同缺${player.dingque}`, state.dealer === playerId ? '你是庄家' : '两门竞争拥挤', '先速度后番数'],
       recommendedAction: null,
       source: '成都册第一章开局节奏、知识库 4.4（同缺启发式）',
     }

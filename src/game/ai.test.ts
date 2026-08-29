@@ -152,7 +152,8 @@ describe('ai 可见信息与基础决策', () => {
   })
 
   it('响应命令始终合法，进攻型愿意碰而稳健型可选择过', () => {
-    let state = fixture(['5万', '55万 123条 789筒', '1万', '2万'])
+    let state = fixture(['5万', '55万 123条 789条', '1万', '2万'])
+    state.players[1].dingque = '筒'
     const tile = state.players[0].hand[0]
     state = run(state, { type: 'discard', playerId: 0, tileId: tile.id })
     const aggressiveState = structuredClone(state)

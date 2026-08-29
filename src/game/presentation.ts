@@ -310,12 +310,14 @@ export function buildTheoryHistoryEntry(state: GameState, report: ReviewReport):
   const issues: ReviewIssueSample[] = report.summary.majorIssues.map((issue) => {
     const decision = issueBySequence.get(issue.sequence)
     return {
+      kind: issue.kind,
       title: issue.title,
       actual: decision === undefined ? '出牌' : `打出${decision.tile.value}${decision.tile.type}`,
       recommended: decision === undefined || decision.bestTiles.length === 0
         ? '理论建议'
         : decision.bestTiles.slice(0, 2).map(tile => `打出${tile.value}${tile.type}`).join('、'),
       reason: issue.detail,
+      opportunityLoss: decision?.opportunityLoss,
     }
   })
   const improvable = report.issues.length
@@ -334,6 +336,17 @@ export function buildTheoryHistoryEntry(state: GameState, report: ReviewReport):
     decisionsReasonable: reasonable,
     decisionsImprovable: improvable,
     issues,
+    learning: {
+      evaluableDecisions: report.decisions.filter(decision => decision.evaluable).length,
+      totalOpportunityLoss: report.stats.totalLoss,
+      maxOpportunityLoss: Math.max(0, ...report.decisions.map(decision => decision.opportunityLoss)),
+      lateDangerDiscards: report.issues.filter(issue => issue.kind === 'attackDefense').length,
+      strongComboBreaks: report.issues.filter(issue => issue.kind === 'strongCombo').length,
+      meldCount: state.players[0].melds.length,
+      averageOpportunity: report.decisions.filter(decision => decision.evaluable).length === 0
+        ? 0
+        : report.decisions.filter(decision => decision.evaluable).reduce((sum, decision) => sum + decision.opportunityActual, 0) / report.decisions.filter(decision => decision.evaluable).length,
+    },
     reviewAlgorithmVersion: REVIEW_ALGORITHM_VERSION,
   }
 }
@@ -342,6 +355,13 @@ export interface HistoryIssueGroup {
   label: string
   count: number
   latest: ReviewIssueSample | null
+}
+
+export interface PlayerPortrait {
+  label: string
+  description: string
+  strengths: string[]
+  focus: string[]
 }
 
 export interface HistoryInsight {
@@ -356,6 +376,7 @@ export interface HistoryInsight {
   latestImprovableRate: number | null
   trendDelta: number | null
   issueGroups: HistoryIssueGroup[]
+  portrait: PlayerPortrait
   advice: string[]
 }
 
@@ -368,12 +389,45 @@ const ISSUE_ADVICE: Record<string, string> = {
   定缺选择: '定缺前先数三门牌张数与搭子结构，缺门最少、搭子最少的一门优先缺；结算页的推荐定缺可直接对照学习。',
   出牌决策: '出牌前先数机会数：留下两面听搭子，优先打孤张与无辐射的浮牌；2、7 万这类边张能辐射更多进张，轻易别拆。',
   响应决策: '碰杠不是多多益善：碰牌会锁死手牌灵活度，先想清楚碰完之后听什么、机会数还剩多少再动手。',
+  tileEfficiency: '牌效训练：每次出牌先数活张，再看哪张牌保留的两面搭与复合搭子更多。',
+  attackDefense: '攻防训练：牌墙后段先找熟张与安全线；牌效只领先一点时，不值得用危险牌交换。',
+  strongCombo: '结构训练：2-7、3-7、2-8、3-8是高辐射组合，除非能换来更大的活张优势，否则先保护它。',
+  meld: '鸣牌训练：碰杠前先问一句——副露后还剩几种叫口、能否更快下叫、暴露风险是否值得。',
+}
+
+function buildPlayerPortrait(entries: readonly GameHistoryEntry[], issueGroups: HistoryIssueGroup[], decisionCount: number, totalLoss: number, dangerCount: number, comboBreaks: number): PlayerPortrait {
+  const lossPerDecision = decisionCount === 0 ? 0 : totalLoss / decisionCount
+  const strengths: string[] = []
+  const focus: string[] = []
+  if (lossPerDecision <= 1.5 && decisionCount >= 4)
+    strengths.push('牌效基本盘稳定，机会数损失控制得住。')
+  if (entries.filter(entry => entry.dealtIn === 0).length >= Math.ceil(entries.length / 2))
+    strengths.push('防守纪律不错，近期多数牌局没有点炮。')
+  if (strengths.length === 0)
+    strengths.push('已经在积累可复盘样本，先用每局的机会数差做校准。')
+  if (lossPerDecision > 3)
+    focus.push('先把出牌节奏放慢：每手先比较活张差，目标是把平均机会数损失压到 2 张以内。')
+  if (comboBreaks > 0)
+    focus.push('优先练强组合保护：遇到 2-7、3-7、2-8、3-8，先确认是否真能换来更大活张。')
+  if (dangerCount > 0)
+    focus.push('尾盘先保命：对手副露后，熟张与安全线优先级要高过一两张机会数。')
+  if (focus.length === 0)
+    focus.push('当前先练“机会数 + 价值”双看：活张接近时，优先保留基础番更高、叫口更宽的路线。')
+  const top = issueGroups[0]?.label
+  const label = lossPerDecision > 3 ? '进攻型试错者' : dangerCount > 0 ? '牌效优先型' : '稳健效率型'
+  return {
+    label,
+    description: `基于近 ${entries.length} 局、${decisionCount} 个决策样本${top ? `，最常见课题是“${top}”` : ''}。这是动态训练画像，不是给你贴死标签。`,
+    strengths,
+    focus,
+  }
 }
 
 export function buildHistoryInsight(entries: readonly GameHistoryEntry[]): HistoryInsight | null {
   if (entries.length === 0)
     return null
-  const scope = entries.slice(0, 3)
+  // 近三局反映近期状态；画像扩大到最多 8 局，避免一两局给玩家贴标签。
+  const scope = entries.slice(0, 8)
   const decisionCount = scope.reduce((sum, entry) => sum + entry.decisionsExcellent + entry.decisionsReasonable + entry.decisionsImprovable, 0)
   const improvable = scope.reduce((sum, entry) => sum + entry.decisionsImprovable, 0)
   const excellent = scope.reduce((sum, entry) => sum + entry.decisionsExcellent, 0)
@@ -384,8 +438,9 @@ export function buildHistoryInsight(entries: readonly GameHistoryEntry[]): Histo
   const grouped = new Map<string, { count: number, latest: ReviewIssueSample | null }>()
   for (const entry of scope) {
     for (const issue of entry.issues) {
-      const current = grouped.get(issue.title) ?? { count: 0, latest: null }
-      grouped.set(issue.title, { count: current.count + 1, latest: issue })
+      const key = issue.kind ?? issue.title
+      const current = grouped.get(key) ?? { count: 0, latest: null }
+      grouped.set(key, { count: current.count + 1, latest: issue })
     }
   }
   const issueGroups: HistoryIssueGroup[] = [...grouped.entries()]
@@ -404,6 +459,9 @@ export function buildHistoryInsight(entries: readonly GameHistoryEntry[]): Histo
   if (scope.reduce((sum, entry) => sum + entry.dealtIn, 0) >= 2)
     advice.push('近期点炮偏多：尾盘跟住同线牌（1-4-7 / 2-5-8 / 3-6-9），对手打过的线更安全。')
 
+  const totalLoss = scope.reduce((sum, entry) => sum + (entry.learning?.totalOpportunityLoss ?? 0), 0)
+  const dangerCount = scope.reduce((sum, entry) => sum + (entry.learning?.lateDangerDiscards ?? 0), 0)
+  const comboBreaks = scope.reduce((sum, entry) => sum + (entry.learning?.strongComboBreaks ?? 0), 0)
   return {
     gameCount: scope.length,
     totalScore: scope.reduce((sum, entry) => sum + entry.score, 0),
@@ -416,6 +474,7 @@ export function buildHistoryInsight(entries: readonly GameHistoryEntry[]): Histo
     latestImprovableRate: latestRate,
     trendDelta: latestRate !== null && earlierAvg !== null ? latestRate - earlierAvg : null,
     issueGroups,
+    portrait: buildPlayerPortrait(scope, issueGroups, decisionCount, totalLoss, dangerCount, comboBreaks),
     advice,
   }
 }

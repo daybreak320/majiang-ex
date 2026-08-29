@@ -2,12 +2,14 @@ import type { GameHistoryEntry } from '../game/persistence'
 import type { GameState, LegalAction, PlayerId, TileInstance } from '../game/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
-import { buildDiscardAssistant } from '../game/assistant'
-import { createInitialGame, recommendDingque } from '../game/core'
+import type { DiscardCandidateAnalysis } from '../game/assistant'
+import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildPengLesson } from '../game/assistant'
+import { createInitialGame, createSpecialTrainingGame, recommendDingque, SPECIAL_TRAINING_META } from '../game/core'
+import type { SpecialTrainingKind } from '../game/core'
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
-import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildHistoryEntry, buildHistoryInsight, buildSettlementSummary, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
-import { buildStrategicReminder } from '../game/strategy'
+import { AI_STYLE_LABELS, buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildTheoryHistoryEntry, formatGameEvent, MELD_LABELS, PLAYER_NAMES, SCORE_REASON_LABELS } from '../game/presentation'
+import { buildStrategicReminder, detectOpponentThreats } from '../game/strategy'
 import { getTurnTimerDuration, shouldAdvanceAI } from '../game/ui'
 import { analyzeGame } from '../review/analyzer'
 import { MajiangTile } from './MajiangTile'
@@ -16,6 +18,7 @@ interface SichuanGameProps {
   seed: number
   restoredState?: GameState
   timedTraining: boolean
+  trainingKind?: SpecialTrainingKind
   onHome: () => void
   onNewGame: () => void
 }
@@ -69,8 +72,33 @@ function PlayerPanel({ state, playerId, thinking }: { state: GameState, playerId
   )
 }
 
-function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, legal, submit }: { state: GameState, thinking: PlayerId | null, selectedTileId: string | null, setSelectedTileId: (id: string | null) => void, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
+function ImmediateTenpaiHint({ candidate }: { candidate: DiscardCandidateAnalysis }) {
+  const total = candidate.waits.reduce((sum, wait) => sum + wait.remaining, 0)
+  const isSingleLive = total === 1
+  const waitText = candidate.theoreticalWaits.map(wait => wait.remaining > 0
+    ? `${wait.tile.value}${wait.tile.type}×${wait.remaining}`
+    : `${wait.tile.value}${wait.tile.type}（理论死听·已打光）`).join('、')
+  const trends = candidate.patternTrends.map(trend => trend.summary).join(' ')
+  return (
+    <aside className={`immediate-tenpai-hint ${isSingleLive ? 'critical-tenpai' : ''}`} aria-live="polite">
+      <b>已选打 {candidate.tile.value}{candidate.tile.type} {candidate.isRecommended ? '· 当前首选' : '· 查看此方案'}</b>
+      {candidate.theoreticalWaits.length > 0
+        ? <span>胡 {waitText} · 实际共剩 {total} 张</span>
+        : <span>暂未听牌 · 下一摸可转听 {candidate.tenpaiPaths.reduce((sum, path) => sum + path.remaining, 0)} 张 · {((candidate.nextDrawTenpaiProbability ?? 0) * 100).toFixed(1)}%</span>}
+      {trends && <small>做牌趋势：{trends}</small>}
+      {candidate.theoreticalWaits.some(wait => wait.remaining === 0) && <strong>注意：牌型上能胡，但该叫口已被公开牌打光，属于理论死听。</strong>}
+      {isSingleLive && <strong>危险：仅剩 1 张活叫，别把单钓当宽听。</strong>}
+    </aside>
+  )
+}
+
+function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, legal, submit }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
   const player = state.players[0]
+  const analysis = useMemo(() => buildDiscardAssistant(state), [state])
+  const selectedTile = player.hand.find(tile => tile.id === selectedTileId)
+  const selectedCandidate = selectedTile === undefined || !discardIds.has(selectedTile.id)
+    ? undefined
+    : analysis.candidates.find(candidate => candidate.tile.type === selectedTile.type && candidate.tile.value === selectedTile.value)
   const selectedAction = discardActions.find(action => action.tileId === selectedTileId)
   return (
     <section className={`player-panel player-south ${state.currentPlayer === 0 && state.phase === 'discarding' ? 'active-player' : ''}`}>
@@ -115,6 +143,7 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
           />
         ))}
       </div>
+      {selectedCandidate !== undefined && <ImmediateTenpaiHint candidate={selectedCandidate} />}
       <div className="action-bar">
         <div className="turn-status">
           {state.phase === 'responding' && legal.length === 0
@@ -169,6 +198,7 @@ const STRATEGY_POSTURE_LABEL = {
 
 function StrategicReminderPanel({ state }: { state: GameState }) {
   const reminder = useMemo(() => buildStrategicReminder(state), [state])
+  const threats = useMemo(() => detectOpponentThreats(state), [state])
   return (
     <section className={`strategy-reminder strategy-${reminder.posture}`} aria-label="战略提醒">
       <div className="strategy-heading">
@@ -181,59 +211,101 @@ function StrategicReminderPanel({ state }: { state: GameState }) {
       </div>
       <div className="strategy-signals">
         {reminder.signals.map(signal => <span key={signal}>{signal}</span>)}
+        {threats.map(threat => <span className="danger-signal" key={`${threat.playerId}-${threat.targetType}`}>{threat.position}睡宽床 · 慎打{threat.targetType}</span>)}
       </div>
     </section>
   )
 }
 
-function AssistantPanel({ state }: { state: GameState }) {
+function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedTileId: string | null }) {
   const analysis = useMemo(() => buildDiscardAssistant(state), [state])
+  const [showTheory, setShowTheory] = useState(false)
+  const [showCandidates, setShowCandidates] = useState(false)
+  const [showPengLesson, setShowPengLesson] = useState(false)
+  const [showHuLesson, setShowHuLesson] = useState(false)
+  const selectedTile = state.players[0].hand.find(tile => tile.id === selectedTileId)
+  const selectedCandidate = analysis.candidates.find(candidate => candidate.tile.type === selectedTile?.type && candidate.tile.value === selectedTile?.value)
+  const lesson = selectedCandidate === undefined ? null : buildCandidateLesson(analysis, selectedCandidate)
+  const pengLesson = buildPengLesson(analysis)
+  const huLesson = buildHuLesson(analysis)
+  const displayedLesson = showHuLesson ? huLesson : showPengLesson ? pengLesson : lesson
   return (
     <section className="assistant-panel" aria-label="实时出牌助手">
-      <div className="assistant-recommendation">
-        <span>推荐动作</span>
-        <strong>{analysis.recommendationLabel}</strong>
-        <p>{analysis.reason}</p>
-      </div>
-      <div className="assistant-probability">
-        <span>下一张直接胡牌</span>
-        <strong>{probabilityLabel(analysis.nextDrawWinProbability)}</strong>
-        <small>
-          活张
-          {' '}
-          {analysis.opportunity}
-          {' / '}
-          未知牌
-          {' '}
-          {analysis.unknownTiles}
-        </small>
-        <div className="assistant-waits">
-          {analysis.waits.length === 0
-            ? <span>暂无有效叫口</span>
-            : analysis.waits.map(wait => (
-                <span key={`${wait.tile.type}-${wait.tile.value}`}>
-                  {wait.tile.value}
-                  {wait.tile.type}
-                  {' '}
-                  {wait.remaining}
-                  张 ·
-                  {' '}
-                  {(wait.probability * 100).toFixed(1)}
-                  %
-                </span>
-              ))}
+      <section className={`coach-card coach-${displayedLesson === null ? analysis.coach.mode : displayedLesson.verdict}`} aria-label="赛中导师">
+        <span>{displayedLesson === null ? '赛中导师' : showHuLesson ? '胡牌取舍' : showPengLesson ? '碰牌讲解' : '手把手讲解'}</span>
+        <strong>{displayedLesson?.headline ?? analysis.coach.headline}</strong>
+        <p>{displayedLesson?.explanation ?? analysis.coach.guidance}</p>
+        <div className="coach-evidence">{(displayedLesson?.evidence ?? analysis.coach.evidence).map(item => <b key={item}>{item}</b>)}</div>
+        <small>练习：{displayedLesson?.nextQuestion ?? analysis.coach.practice}</small>
+      </section>
+      {huLesson !== null && (
+        <button className={`peng-coach-toggle coach-${huLesson.verdict}`} onClick={() => { setShowHuLesson(current => !current); setShowPengLesson(false) }}>
+          {showHuLesson ? '返回当前讲解' : `胡 ${analysis.huDecision!.points}分 · 查看胡或继续做大`}
+        </button>
+      )}
+      {pengLesson !== null && (
+        <button className={`peng-coach-toggle coach-${pengLesson.verdict}`} onClick={() => { setShowPengLesson(current => !current); setShowHuLesson(false) }}>
+          {showPengLesson ? '返回当前讲解' : `碰 ${analysis.pengCandidate!.tile.value}${analysis.pengCandidate!.tile.type} · 查看碰或过分析`}
+        </button>
+      )}
+      <div className="assistant-overview">
+        <div className="assistant-recommendation">
+          <span>推荐动作</span>
+          <strong>{analysis.recommendationLabel}</strong>
+          <p>{analysis.reason}</p>
         </div>
+        <div className="assistant-probability">
+          <span>{analysis.nextDrawWinProbability === null ? '当前未下叫 · 看候选入听率' : '下一张直接胡牌'}</span>
+          <strong>{analysis.nextDrawWinProbability === null ? '未下叫' : probabilityLabel(analysis.nextDrawWinProbability)}</strong>
+          <small>{analysis.nextDrawWinProbability === null ? '下方每种弃牌均列出下一摸入听路径与概率' : `活张 ${analysis.opportunity} / 未知牌 ${analysis.unknownTiles} · 牌墙 ${analysis.wallTiles}`}</small>
+          <div className="assistant-waits">
+            {analysis.waits.length === 0
+              ? <span>暂无直接和牌叫口</span>
+              : analysis.waits.map(wait => (
+                  <span key={`${wait.tile.type}-${wait.tile.value}`}>
+                    {wait.tile.value}{wait.tile.type} {wait.remaining}张 · {(wait.probability * 100).toFixed(1)}% · {wait.baseFan}番
+                  </span>
+                ))}
+          </div>
+        </div>
+        <button className="assistant-theory-toggle" onClick={() => setShowTheory(current => !current)}>
+          {showTheory ? '收起依据' : '展开理论依据'}
+        </button>
       </div>
+      {showTheory && (
+        <div className="assistant-theory">
+          <strong>这次推荐是怎么推出来的</strong>
+          <ul>{analysis.theoryBasis.map(item => <li key={item}>{item}</li>)}</ul>
+        </div>
+      )}
+      <div className="assistant-candidates" aria-label="各弃牌方案的听牌收益比较">
+        <div className="assistant-section-heading">
+          <div><span>手牌选择 · 听牌收益对比</span><small>已听看下一摸和牌率；未听看下一摸经一次弃牌可入听的概率。均按公开牌扣张。</small></div>
+          <button className="assistant-theory-toggle" onClick={() => setShowCandidates(current => !current)}>{showCandidates ? '收起选听对比' : `展开 ${analysis.candidates.length} 类选听对比`}</button>
+        </div>
+        {showCandidates && (analysis.candidates.length === 0
+          ? <p className="muted">当前不是出牌阶段，暂不生成弃牌对比。</p>
+          : analysis.candidates.map(candidate => (
+              <article className={`assistant-candidate ${candidate.isRecommended ? 'recommended-candidate' : ''}`} key={`${candidate.tile.value}-${candidate.tile.type}`}>
+                <div className="candidate-tile"><b>打</b><strong>{candidate.tile.value}{candidate.tile.type}</strong>{candidate.isRecommended && <small>推荐</small>}</div>
+                <div><span>活张 / 叫口</span><b>{candidate.opportunity} 张 / {candidate.structuralWaits} 种</b></div>
+                <div><span>{candidate.nextDrawWinProbability === null ? '下一摸入听率' : '下一摸和牌率'}</span><b>{candidate.nextDrawWinProbability === null ? probabilityLabel(candidate.nextDrawTenpaiProbability) : probabilityLabel(candidate.nextDrawWinProbability)}</b></div>
+                <div><span>{candidate.averageFan === null ? '入听后番型' : '成牌基础价值'}</span><b>{candidate.averageFan === null ? '未下叫 · 摸入后定番' : `${candidate.averageFan.toFixed(1)}番 · ${Math.round(candidate.averagePoints ?? 0)}分`}</b></div>
+                <div><span>{candidate.averageFan === null ? '转听进张' : '单巡性价比'}</span><b>{candidate.averageFan === null ? `${candidate.tenpaiPaths.reduce((sum, path) => sum + path.remaining, 0)} 张` : candidate.valueIndex === 0 ? '—' : `${(candidate.valueIndex * 100).toFixed(1)} 指数`}</b></div>
+                <p>{candidate.brokenCombos.length === 0 ? '结构：未拆强组合。' : `结构：会拆 ${candidate.brokenCombos.map(([a, b]) => `${a}-${b}`).join('、')} 强组合。`}</p>
+                <div className="candidate-waits">
+                  {candidate.waits.length > 0
+                    ? candidate.waits.map(wait => <span key={`${wait.tile.value}-${wait.tile.type}`}>{wait.tile.value}{wait.tile.type}×{wait.remaining} · {wait.baseFan}番</span>)
+                    : candidate.tenpaiPaths.length > 0
+                      ? candidate.tenpaiPaths.map(path => <span key={`${path.tile.value}-${path.tile.type}`}>摸{path.tile.value}{path.tile.type}×{path.remaining} · {(path.probability * 100).toFixed(1)}%后可入听</span>)
+                      : <span>下一摸暂无可直接转听进张</span>}
+                </div>
+              </article>
+            )))}</div>
       <div className="assistant-known">
         <div className="assistant-known-heading">
           <span>已知牌分布</span>
-          <small>
-            已知
-            {' '}
-            {analysis.knownTiles}
-            {' · 牌墙 '}
-            {analysis.wallTiles}
-          </small>
+          <small>已知 {analysis.knownTiles} · 牌墙 {analysis.wallTiles}</small>
         </div>
         {(['万', '条', '筒'] as const).map(type => (
           <div className="known-suit-row" key={type}>
@@ -241,12 +313,7 @@ function AssistantPanel({ state }: { state: GameState }) {
             {Array.from({ length: 9 }, (_, index) => {
               const value = index + 1
               const count = analysis.knownTileCounts.find(item => item.tile.type === type && item.tile.value === value)?.count ?? 0
-              return (
-                <span className={count === 4 ? 'exhausted' : ''} key={value}>
-                  <i>{value}</i>
-                  <small>{count}</small>
-                </span>
-              )
+              return <span className={count === 4 ? 'exhausted' : ''} key={value}><i>{value}</i><small>{count}</small></span>
             })}
           </div>
         ))}
@@ -466,31 +533,32 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
           : <p className="muted">本局未发现明显问题，继续保持稳定的出牌节奏。</p>}
         <div className="opportunity-trend">
           <div className="trend-heading">
-            <h4>机会数趋势</h4>
-            <span>
-              {intelligentReview.stats.opportunityTrend.length}
-              {' 次可分析出牌'}
-            </span>
+            <h4>转和空间变化</h4>
+            <span>{intelligentReview.decisions.filter(decision => decision.evaluable).length} 次可比较出牌</span>
           </div>
-          <div className="trend-bars" aria-label="每次出牌后的机会数趋势">
-            {intelligentReview.stats.opportunityTrend.length > 0
-              ? intelligentReview.stats.opportunityTrend.map((value, index) => <span key={`${index}-${value}`} style={{ height: `${Math.max(8, Math.min(100, value * 10))}%` }} title={`第${index + 1}次：${value}个机会`} />)
-              : <span className="trend-empty">暂无足够数据</span>}
+          <p className="opportunity-explainer">这张图只看你每次出牌后，桌上还有多少张牌能立刻把手牌推向听牌或和牌。柱子高，说明路更宽；柱子突然变矮，往往意味着把关键搭子或可用叫口打窄了。副露后的暗手结构暂不混进图里，避免把看不准的局面装成精确结论。</p>
+          <div className="trend-bars" aria-label="每次出牌后的转和空间变化">
+            {intelligentReview.decisions.filter(decision => decision.evaluable).length > 0
+              ? intelligentReview.decisions.filter(decision => decision.evaluable).map((decision, index) => <span key={`${decision.sequence}-${decision.opportunityActual}`} className={decision.opportunityLoss >= 4 ? 'trend-loss' : ''} style={{ height: `${Math.max(8, Math.min(100, decision.opportunityActual * 10))}%` }} title={`第${index + 1}次：实战留${decision.opportunityActual}张活张，更宽路线留${decision.opportunityBest}张，少留${decision.opportunityLoss}张`} />)
+              : <span className="trend-empty">暂无足够的暗手节点可比较转和空间</span>}
           </div>
         </div>
         <div className="intelligent-stats">
-          <div>
-            <b>{intelligentReview.stats.decisions}</b>
-            <span>分析决策</span>
-          </div>
-          <div>
-            <b>{intelligentReview.stats.totalLoss}</b>
-            <span>机会数总损失</span>
-          </div>
-          <div>
-            <b>{intelligentReview.stats.averageLoss.toFixed(1)}</b>
-            <span>平均损失</span>
-          </div>
+          <div><b>{intelligentReview.stats.decisions}</b><span>分析决策</span></div>
+          <div><b>{intelligentReview.stats.totalLoss}</b><span>累计少留活张</span></div>
+          <div><b>{intelligentReview.stats.averageLoss.toFixed(1)}</b><span>平均少留活张</span></div>
+        </div>
+        <div className="decision-lessons">
+          <h4>把“可改进”变成下一次能用的动作</h4>
+          {intelligentReview.decisions.filter(decision => decision.evaluable && decision.opportunityLoss > 0).sort((a, b) => b.opportunityLoss - a.opportunityLoss).slice(0, 3).map(decision => (
+            <article key={decision.sequence}>
+              <div><strong>第 {decision.sequence} 手 · 打 {decision.tile.value}{decision.tile.type}</strong><b>把路打窄了 {decision.opportunityLoss} 张活张</b></div>
+              <p>你这条路：剩 {decision.opportunityActual} 张活张（{decision.actualWaits.length === 0 ? '未成活叫' : decision.actualWaits.map(wait => `${wait.tile.value}${wait.tile.type}×${wait.remaining}`).join('、')}），后续比较难接。</p>
+              <p>更宽的路：打 {decision.bestTiles.slice(0, 2).map(tile => `${tile.value}${tile.type}`).join('、')}，还能留 {decision.opportunityBest} 张活张（{decision.bestWaits.length === 0 ? '未成活叫' : decision.bestWaits.map(wait => `${wait.tile.value}${wait.tile.type}×${wait.remaining}`).join('、')}）。</p>
+              <small>{decision.brokenCombos.length > 0 ? `结构提醒：你同时拆了 ${decision.brokenCombos.map(([a, b]) => `${a}-${b}`).join('、')} 这组能接住多种来牌的搭子。` : `当时牌墙还有 ${decision.wallTiles} 张；下次先把各条路的“牌名×剩余张数”摆出来，再选更容易兑现的一边。`}</small>
+            </article>
+          ))}
+          {intelligentReview.decisions.filter(decision => decision.evaluable && decision.opportunityLoss > 0).length === 0 && <p className="muted">本局没有把明显更宽的转和路线打窄；下一阶段可把注意力放在番型价值与攻防取舍。</p>}
         </div>
       </section>
       {insight !== null && insight.gameCount >= 2 && (
@@ -509,6 +577,14 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
             {Math.round(insight.improvableRate * 100)}
             %
           </h3>
+          <section className="player-portrait" aria-label="玩家画像">
+            <div className="portrait-heading"><span>玩家画像 · 动态判断</span><strong>{insight.portrait.label}</strong></div>
+            <p>{insight.portrait.description}</p>
+            <div className="portrait-columns">
+              <div><b>你的优势</b>{insight.portrait.strengths.map(item => <span key={item}>{item}</span>)}</div>
+              <div><b>下一阶段主线</b>{insight.portrait.focus.map(item => <span key={item}>{item}</span>)}</div>
+            </div>
+          </section>
           <div className="history-stats">
             <div>
               <b className={insight.totalScore >= 0 ? 'positive-score' : 'negative-score'}>
@@ -631,8 +707,8 @@ function SettlementPage({ state, history, onHome, onNewGame }: { state: GameStat
   )
 }
 
-export function SichuanGame({ seed, restoredState, timedTraining, onHome, onNewGame }: SichuanGameProps) {
-  const [state, setState] = useState(() => restoredState ?? createInitialGame(seed))
+export function SichuanGame({ seed, restoredState, timedTraining, trainingKind, onHome, onNewGame }: SichuanGameProps) {
+  const [state, setState] = useState(() => restoredState ?? (trainingKind === undefined ? createInitialGame(seed) : createSpecialTrainingGame(seed, trainingKind)))
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
   const [thinking, setThinking] = useState<PlayerId | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -776,7 +852,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, onHome, onNewG
 
   if (state.phase === 'finished') {
     if (historyRef.current === null) {
-      const entry = buildHistoryEntry(state, buildGameReview(state))
+      const entry = buildTheoryHistoryEntry(state, analyzeGame(state.events, 0))
       recordFinishedGame(entry)
       historyRef.current = [entry, ...loadGameHistory()]
     }
@@ -803,7 +879,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, onHome, onNewG
         <div>
           <span className="eyebrow">成都血战到底</span>
           <strong>
-            四人实战 · Seed
+            {trainingKind === undefined ? '四人实战' : SPECIAL_TRAINING_META[trainingKind].title} · Seed
             {seed}
           </strong>
         </div>
@@ -831,7 +907,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, onHome, onNewG
         </div>
       </header>
       <StrategicReminderPanel state={state} />
-      {assistantEnabled && <AssistantPanel state={state} />}
+      {assistantEnabled && <AssistantPanel state={state} selectedTileId={selectedTileId} />}
       <div className="table-grid">
         {[1, 2, 3].map(id => <PlayerPanel key={id} state={state} playerId={id as PlayerId} thinking={thinking} />)}
         <section className="table-center">

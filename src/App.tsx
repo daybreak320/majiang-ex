@@ -5,6 +5,8 @@ import { ParticleBackground } from './components/ParticleBackground'
 import { SichuanGame } from './components/SichuanGame'
 import { APP_VERSION } from './config/release'
 import { loadUnfinishedGame } from './game/persistence'
+import { SPECIAL_TRAINING_META } from './game/core'
+import type { SpecialTrainingKind } from './game/core'
 
 type Page = 'home' | 'game'
 
@@ -17,16 +19,30 @@ function App() {
   const [seed, setSeed] = useState(nextSeed)
   const [savedGame, setSavedGame] = useState<GameState | null>(null)
   const [timedTraining, setTimedTraining] = useState(false)
+  const [trainingKind, setTrainingKind] = useState<SpecialTrainingKind | null>(null)
+  const [ignoreSavedGame, setIgnoreSavedGame] = useState(false)
 
   useEffect(() => {
+    if (ignoreSavedGame)
+      return
     const saved = loadUnfinishedGame()
     setSavedGame(saved?.state ?? null)
     if (saved !== null)
       setTimedTraining(saved.options?.timedTraining ?? false)
-  }, [page])
+  }, [page, ignoreSavedGame])
 
   const startGame = () => {
+    setIgnoreSavedGame(true)
     setSavedGame(null)
+    setTrainingKind(null)
+    setSeed(nextSeed())
+    setPage('game')
+  }
+
+  const startSpecialTraining = (kind: SpecialTrainingKind) => {
+    setIgnoreSavedGame(true)
+    setSavedGame(null)
+    setTrainingKind(kind)
     setSeed(nextSeed())
     setPage('game')
   }
@@ -39,7 +55,7 @@ function App() {
   }
 
   if (page === 'game')
-    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} onHome={() => setPage('home')} onNewGame={startGame} />
+    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} trainingKind={savedGame === null ? trainingKind ?? undefined : undefined} onHome={() => setPage('home')} onNewGame={startGame} />
 
   return (
     <div className="home-page min-h-screen w-full relative">
@@ -91,11 +107,28 @@ function App() {
             <button className="secondary-action battle-start" onClick={startGame}>开始新局</button>
           </div>
         </section>
+        <section className="scenario-training-section">
+          <div className="section-heading">
+            <span className="eyebrow">实战专项训练</span>
+            <h2>带倾向的牌局，不再只靠随机发牌</h2>
+            <p>每类训练都固定关键牌型和公开局势；打开出牌助手可逐手核对机会数、叫口、风险与导师解释。</p>
+          </div>
+          <div className="scenario-training-grid">
+            {(Object.keys(SPECIAL_TRAINING_META) as SpecialTrainingKind[]).map(kind => (
+              <article className={`scenario-training-card scenario-${kind}`} key={kind}>
+                <span>{kind.startsWith('attack') ? '进攻训练' : kind.startsWith('defense') ? '防守训练' : '残局算牌'}</span>
+                <h3>{SPECIAL_TRAINING_META[kind].title}</h3>
+                <p>{SPECIAL_TRAINING_META[kind].summary}</p>
+                <button className="secondary-action" onClick={() => startSpecialTraining(kind)}>进入专项</button>
+              </article>
+            ))}
+          </div>
+        </section>
         <section className="training-section">
           <div className="section-heading">
-            <span className="eyebrow">专项训练</span>
-            <h2>基本功训练</h2>
-            <p>听牌、舍牌、速度与牌型训练仍可继续使用。</p>
+            <span className="eyebrow">基本功训练</span>
+            <h2>听牌、舍牌、速度与牌型</h2>
+            <p>基础练习保持独立，适合热身和单点重复训练。</p>
           </div>
           <MajiangHand />
         </section>

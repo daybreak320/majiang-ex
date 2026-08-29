@@ -2,7 +2,7 @@ import type { TileType } from '../types'
 import type { GameState, TileInstance } from './types'
 import { describe, expect, it } from 'vitest'
 import { createInitialGame, createTileSet, sortTiles } from './core'
-import { buildStrategicReminder } from './strategy'
+import { buildStrategicReminder, detectOpponentThreats } from './strategy'
 
 function take(pool: TileInstance[], specification: string): TileInstance[] {
   return specification.trim().split(/\s+/).flatMap((part) => {
@@ -50,7 +50,7 @@ describe('战略级提醒', () => {
     state.players[1].dingque = '条'
     state.players[2].dingque = '条'
     state.players[3].dingque = '筒'
-    expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('同缺拥挤') })
+    expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('三家同缺') })
 
     state.players[2].dingque = '万'
     expect(buildStrategicReminder(state).title).not.toContain('同缺拥挤')
@@ -65,6 +65,28 @@ describe('战略级提醒', () => {
     const reminder = buildStrategicReminder(state)
     expect(reminder).toMatchObject({ posture: 'press', title: expect.stringContaining('清一色窗口') })
     expect(reminder.summary).toContain('2 家缺万')
+  })
+
+  it('三家同缺即使不坐庄也明确提示快跑', () => {
+    const { state } = fixture()
+    state.dealer = 1
+    state.players[0].dingque = '万'
+    state.players[1].dingque = '万'
+    state.players[2].dingque = '万'
+    state.players[3].dingque = '条'
+    expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('三家同缺') })
+  })
+
+  it('玩家 1 是上家：清缺后两副露同一门，正确提示睡宽床与防清一色', () => {
+    const { state, pool } = fixture()
+    state.players[1].dingque = '万'
+    state.players[1].discards = take(pool, '19万')
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '333条'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '666条'), fromPlayer: 3 },
+    ]
+    expect(detectOpponentThreats(state)).toMatchObject([{ playerId: 1, position: '上家', targetType: '条', meldCount: 2 }])
+    expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('上家睡宽床') })
   })
 
   it('对家打缺后连续推三张第二门时退出清一色竞争，两张不算强信号', () => {

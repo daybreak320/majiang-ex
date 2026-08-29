@@ -42,6 +42,12 @@ export interface DiscardDecision {
   isForcedDingque: boolean
   /** 被拆掉的强组合（27/37/38） */
   brokenCombos: ReadonlyArray<readonly [number, number]>
+  /** 实战选择后的活张明细，用于教学解释 */
+  actualWaits: Array<{ tile: Tile, remaining: number }>
+  /** 最优方案的活张明细，用于对比学习 */
+  bestWaits: Array<{ tile: Tile, remaining: number }>
+  /** 作出该决策时的牌墙余量 */
+  wallTiles: number
 }
 
 /** 一条复盘问题 */

@@ -106,8 +106,8 @@ function DecisionSituation({ decision }: { decision: DiscardDecision }) {
           <dd>{recommended.length > 0 ? recommended.map(tile => `${tile.value}${tile.type}`).join('、') : '当前约束下无可比候选'}</dd>
         </div>
         <div>
-          <dt>机会数</dt>
-          <dd>{`${decision.opportunityActual} / 最优 ${decision.opportunityBest}`}</dd>
+          <dt>转和空间</dt>
+          <dd>{`实战 ${decision.opportunityActual} 张活张 / 更宽路线 ${decision.opportunityBest} 张`}</dd>
         </div>
         <div>
           <dt>局面阶段</dt>
@@ -143,7 +143,7 @@ function HighlightConclusion({ highlight, decision, seed }: { highlight: ReviewH
           <span className="review-focus-index">优秀决策</span>
           <h4>{highlight.title}</h4>
         </div>
-        <span className="review-highlight-score">{`机会数 ${highlight.opportunity}`}</span>
+        <span className="review-highlight-score">{`活张 ${highlight.opportunity} 张`}</span>
       </div>
       {decision !== undefined && <DecisionSituation decision={decision} />}
       <p>{highlight.detail}</p>
@@ -154,13 +154,13 @@ function HighlightConclusion({ highlight, decision, seed }: { highlight: ReviewH
 
 function OpportunityTrend({ values }: { values: number[] }) {
   if (values.length === 0)
-    return <p className="muted">本局没有可绘制的机会数数据。</p>
+    return <p className="muted">本局没有足够的暗手节点可比较转和空间。</p>
   const maximum = Math.max(...values, 1)
   return (
     <div className="opportunity-trend">
-      <div className="opportunity-chart" aria-label={`各次出牌机会数：${values.join('、')}`} role="img">
+      <div className="opportunity-chart" aria-label={`各次出牌后的活张数：${values.join('、')}`} role="img">
         {values.map((value, index) => (
-          <span className="opportunity-column" key={`${index}-${value}`} title={`第 ${index + 1} 次出牌：${value} 个机会`}>
+          <span className="opportunity-column" key={`${index}-${value}`} title={`第 ${index + 1} 次出牌后：${value} 张活张`}>
             <i style={{ height: `${Math.max(6, Math.round(value / maximum * 100))}%` }} />
             <b>{value}</b>
             <small>{index + 1}</small>
@@ -168,7 +168,7 @@ function OpportunityTrend({ values }: { values: number[] }) {
         ))}
       </div>
       <div className="opportunity-axis">
-        <span>机会数</span>
+        <span>可兑现的活张</span>
         <span>出牌次序</span>
       </div>
     </div>
@@ -183,8 +183,8 @@ export function TheoryReviewPanel({ report, seed }: { report: ReviewReport, seed
       <div className="theory-review-header">
         <div>
           <span className="eyebrow">朱扬理论复盘</span>
-          <h3>{majorIssues.length > 0 ? `本局有 ${majorIssues.length} 个优先改进点` : '本局牌效决策整体稳健'}</h3>
-          <p className="muted">基于当时可见信息的机会数近似评估，不代表精确期望值。</p>
+          <h3>{majorIssues.length > 0 ? `本局有 ${majorIssues.length} 个优先改进点` : '本局出牌节奏整体稳健'}</h3>
+          <p className="muted">结论只依据当时已经公开的牌河、副露、牌墙与手牌结构；它在比较哪条路更容易兑现，不冒充精确胜率。</p>
         </div>
         <span className="review-version">{REVIEW_ALGORITHM_VERSION}</span>
       </div>
@@ -195,17 +195,17 @@ export function TheoryReviewPanel({ report, seed }: { report: ReviewReport, seed
         </div>
         <div>
           <b>{report.stats.totalLoss}</b>
-          <span>累计机会数损失</span>
+          <span>累计少留活张</span>
         </div>
         <div>
           <b>{report.stats.averageLoss.toFixed(1)}</b>
-          <span>平均机会数损失</span>
+          <span>平均少留活张</span>
         </div>
       </div>
       <div className="opportunity-section">
         <div>
-          <h4>机会数趋势</h4>
-          <p className="muted">每次出牌后保留的有效进张数量</p>
+          <h4>转和空间变化</h4>
+          <p className="muted">每次出牌后还剩多少张牌能直接把手牌推向听牌或和牌</p>
         </div>
         <OpportunityTrend values={report.stats.opportunityTrend} />
       </div>

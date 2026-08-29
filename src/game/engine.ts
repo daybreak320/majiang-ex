@@ -159,6 +159,10 @@ function responseHuOption(state: GameState, playerId: PlayerId, window: Response
   return { score, special }
 }
 
+function hasUnclearedDingque(player: PlayerState): boolean {
+  return player.dingque !== null && player.hand.some(tile => tile.type === player.dingque)
+}
+
 function gangTypes(player: PlayerState): Map<string, TileInstance[]> {
   const groups = new Map<string, TileInstance[]>()
   for (const tile of player.hand) {
@@ -203,7 +207,8 @@ function responseActions(state: GameState, playerId: PlayerId): LegalAction[] {
   const hu = responseHuOption(state, playerId, window)
   if (hu !== null)
     actions.unshift({ type: 'hu', tileId: window.tile.id, value: hu.score.points })
-  if (window.kind === 'discard') {
+  // 四川麻将定缺未清之前必须先打缺，不能碰、明杠任何牌。
+  if (window.kind === 'discard' && !hasUnclearedDingque(player)) {
     if (matching.length >= 2)
       actions.push({ type: 'peng', tileId: window.tile.id })
     if (matching.length >= 3)

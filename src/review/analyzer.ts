@@ -50,28 +50,31 @@ export function analyzeDiscardDecision(
   const evaluable = handBefore.length === 14 && player.melds.length === 0
   const isForcedDingque = dingque !== null && handBefore.some(tile => tile.type === dingque)
 
-  const opportunityOf = (tile: TileInstance): number =>
+  const opportunityOf = (tile: TileInstance) =>
     countOpportunities(
       handBefore.filter(candidate => candidate.id !== tile.id),
       visible,
       { dingque },
-    ).total
+    )
 
   let opportunityBest = 0
   let bestTiles: TileInstance[] = []
+  let bestWaits: Array<{ tile: Tile, remaining: number }> = []
   if (evaluable) {
     for (const candidate of legalDiscardCandidates(handBefore, dingque)) {
-      const total = opportunityOf(candidate)
-      if (total > opportunityBest) {
-        opportunityBest = total
+      const result = opportunityOf(candidate)
+      if (result.total > opportunityBest) {
+        opportunityBest = result.total
         bestTiles = [candidate]
+        bestWaits = result.waits
       }
-      else if (total === opportunityBest) {
+      else if (result.total === opportunityBest) {
         bestTiles.push(candidate)
       }
     }
   }
-  const opportunityActual = evaluable ? opportunityOf(discarded) : 0
+  const actualResult = evaluable ? opportunityOf(discarded) : { total: 0, waits: [] }
+  const opportunityActual = actualResult.total
 
   const isLateGame = snapshot.wall.length <= LATE_GAME_WALL
   const upper = snapshot.players[(playerId + 3) % 4 as PlayerId]
@@ -113,6 +116,9 @@ export function analyzeDiscardDecision(
     isLateGame,
     isForcedDingque,
     brokenCombos: combos,
+    actualWaits: actualResult.waits,
+    bestWaits,
+    wallTiles: snapshot.wall.length,
   }
 }
 
@@ -137,6 +143,29 @@ function bestTilesLabel(decision: DiscardDecision): string {
   return labels.length > 2 ? `${shown} 等` : shown
 }
 
+function waitsLabel(waits: readonly { tile: Tile, remaining: number }[]): string {
+  if (waits.length === 0)
+    return '尚未形成活叫'
+  return waits.slice(0, 5).map(wait => `${tileLabel(wait.tile)}×${wait.remaining}`).join('、') + (waits.length > 5 ? ' 等' : '')
+}
+
+function paceLabel(liveTiles: number): string {
+  if (liveTiles >= 8)
+    return '转和的路很宽'
+  if (liveTiles >= 4)
+    return '还有可用的追赶空间'
+  if (liveTiles > 0)
+    return '路已经很窄'
+  return '已经没有可兑现的活叫'
+}
+
+function publicSituation(decision: DiscardDecision): string {
+  const phase = decision.isLateGame ? `牌墙只剩 ${decision.wallTiles} 张，已进入尾盘` : `当时牌墙还有 ${decision.wallTiles} 张，仍可优先争取速度`
+  if (decision.isForcedDingque)
+    return `${phase}，而且手里还留着定缺门，这一手属于规则强制清缺，不能按普通取舍判错。`
+  return `${phase}。`
+}
+
 /** 从全部决策聚合问题与亮点（PRD 12.3：启发式近似，输出 2 主要问题 + 1 优秀决策） */
 export function buildReport(playerId: PlayerId, decisions: readonly DiscardDecision[]): ReviewReport {
   const issues: ReviewIssue[] = []
@@ -148,8 +177,8 @@ export function buildReport(playerId: PlayerId, decisions: readonly DiscardDecis
       issues.push({
         kind: 'tileEfficiency',
         severity,
-        title: `机会数损失 ${decision.opportunityLoss}：打出 ${tileLabel(decision.tile)}`,
-        detail: `出牌后机会数 ${decision.opportunityActual}，同约束下最优可到 ${decision.opportunityBest}（打 ${bestTilesLabel(decision)}）。机会数是有效进张数，损失越多听牌越慢。`,
+        title: `这一手把转和的路打窄了：${tileLabel(decision.tile)}`,
+        detail: `${publicSituation(decision)} 你打出 ${tileLabel(decision.tile)} 后，实战只留下 ${decision.opportunityActual} 张可兑现的活张（${waitsLabel(decision.actualWaits)}），${paceLabel(decision.opportunityActual)}；如果改打 ${bestTilesLabel(decision)}，还能保留 ${decision.opportunityBest} 张活张（${waitsLabel(decision.bestWaits)}）。这不是单纯“少几张牌”，而是把原本更容易摸到、也更容易尽快听牌的路线拆窄了。下次先比较各候选打完后留下的叫口和剩余张数，再决定谁该先走。`,
         sequence: decision.sequence,
       })
     }
@@ -159,7 +188,7 @@ export function buildReport(playerId: PlayerId, decisions: readonly DiscardDecis
         kind: 'strongCombo',
         severity: 4,
         title: `拆掉强组合 ${combos}`,
-        detail: `打出 ${tileLabel(decision.tile)} 破坏了 ${combos} 组合。27/37/38 只用两张牌连接 1-9 全部数字，是效率最高的结构，非必要不拆。`,
+        detail: `${publicSituation(decision)} 打出 ${tileLabel(decision.tile)} 后，把 ${combos} 这组原本能同时接住多种来牌的搭子拆开了。它看着只是两张边张，实际却给后续成搭留了很多接口；局面没有逼你清缺或防守时，先处理更孤立的牌会稳得多。`,
         sequence: decision.sequence,
       })
     }
@@ -168,14 +197,14 @@ export function buildReport(playerId: PlayerId, decisions: readonly DiscardDecis
         kind: 'attackDefense',
         severity: 2,
         title: `尾盘打出危险牌 ${tileLabel(decision.tile)}`,
-        detail: '3/6/9 线最易被吃碰，中盘后宜跟打熟张或踩 1/4/7 安全线。',
+        detail: `${publicSituation(decision)} 此时打出 ${tileLabel(decision.tile)} 既不是桌上已经反复出现的熟张，也没有明显的安全依据；在别人已经有副露、牌局收紧时，这种生张比继续做一点牌更容易出事。若手牌仍有替代，优先跟着已出现过的牌走，先把放铳风险压下来。`,
         sequence: decision.sequence,
       })
     }
     if (decision.evaluable && decision.opportunityLoss === 0 && decision.opportunityActual >= HIGHLIGHT_MIN_OPPORTUNITY) {
       highlights.push({
-        title: `打出 ${tileLabel(decision.tile)} 后机会数 ${decision.opportunityActual}（最优）`,
-        detail: '选择了机会数最大的出牌，保留最强进张结构。',
+        title: `这手把最快的转和路线留住了：${tileLabel(decision.tile)}`,
+        detail: `${publicSituation(decision)} 打出 ${tileLabel(decision.tile)} 后仍保留 ${decision.opportunityActual} 张活张（${waitsLabel(decision.actualWaits)}），${paceLabel(decision.opportunityActual)}。你没有为了眼前的孤张或小结构去拆掉更宽的叫口，速度判断是对的。`,
         sequence: decision.sequence,
         opportunity: decision.opportunityActual,
       })

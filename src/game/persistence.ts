@@ -17,10 +17,22 @@ export interface GameSave {
 }
 
 export interface ReviewIssueSample {
+  kind?: 'tileEfficiency' | 'attackDefense' | 'strongCombo' | 'meld'
   title: string
   actual: string
   recommended: string
   reason: string
+  opportunityLoss?: number
+}
+
+export interface PlayerLearningMetrics {
+  evaluableDecisions: number
+  totalOpportunityLoss: number
+  maxOpportunityLoss: number
+  lateDangerDiscards: number
+  strongComboBreaks: number
+  meldCount: number
+  averageOpportunity: number
 }
 
 export interface GameHistoryEntry {
@@ -36,6 +48,7 @@ export interface GameHistoryEntry {
   decisionsReasonable: number
   decisionsImprovable: number
   issues: ReviewIssueSample[]
+  learning?: PlayerLearningMetrics
   reviewAlgorithmVersion?: string
 }
 
