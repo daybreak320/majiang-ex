@@ -1,8 +1,10 @@
+import type { SpecialTrainingKind } from '../game/core'
 import type { GameMode } from './GameModeSelector'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
 import { useGameState } from '../hooks/useGameState'
 import { useSound } from '../hooks/useSound'
+import { recordTrainingStart } from '../utils/playerProfile'
 import { trackGameComplete, trackModeSelect } from '../utils/tracker'
 import { AchievementSystem } from './AchievementSystem'
 import { CelebrationEffect } from './CelebrationEffect'
@@ -16,7 +18,12 @@ import { StatsPanel } from './StatsPanel'
 import { TingMode } from './TingMode'
 import { TutorialOverlay } from './TutorialOverlay'
 
-export function MajiangHand() {
+interface MajiangHandProps {
+  specialTrainings?: Array<{ kind: SpecialTrainingKind, title: string, summary: string }>
+  onStartSpecialTraining?: (kind: SpecialTrainingKind) => void
+}
+
+export function MajiangHand({ specialTrainings, onStartSpecialTraining }: MajiangHandProps) {
   const {
     score,
     combo,
@@ -46,6 +53,7 @@ export function MajiangHand() {
     setMode(mode)
     playSound('newgame')
     trackModeSelect(mode)
+    recordTrainingStart({ ting: '听牌训练', discard: '出牌训练', speed: '速度挑战', pattern: '牌型识别' }[mode])
   }
 
   const gameStartTime = useState(Date.now())[0]
@@ -171,6 +179,8 @@ export function MajiangHand() {
         currentMode={currentMode}
         onSelectMode={handleModeSelect}
         getModeAccuracy={getModeAccuracy}
+        specialTrainings={specialTrainings}
+        onStartSpecialTraining={onStartSpecialTraining}
       />
 
       {/* 游戏区域 */}

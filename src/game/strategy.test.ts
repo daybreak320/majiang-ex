@@ -2,7 +2,7 @@ import type { TileType } from '../types'
 import type { GameState, TileInstance } from './types'
 import { describe, expect, it } from 'vitest'
 import { createInitialGame, createTileSet, sortTiles } from './core'
-import { buildStrategicReminder, detectOpponentThreats } from './strategy'
+import { buildStrategicReminder, detectOpponentThreats, inferEndgameDefense } from './strategy'
 
 function take(pool: TileInstance[], specification: string): TileInstance[] {
   return specification.trim().split(/\s+/).flatMap((part) => {
@@ -33,6 +33,16 @@ function fixture(hand = '123万 4567条 123456筒'): { state: GameState, pool: T
   state.wall = pool
   return { state, pool }
 }
+
+describe('尾盘公开信息猜牌', () => {
+  it('默认仅在牌墙剩 16 张或更少时启用', () => {
+    const { state } = fixture()
+    state.wall = state.wall.slice(0, 17)
+    expect(inferEndgameDefense(state).active).toBe(false)
+    state.wall = state.wall.slice(0, 16)
+    expect(inferEndgameDefense(state).active).toBe(true)
+  })
+})
 
 describe('战略级提醒', () => {
   it('从定缺阶段开始给出中性提醒，不提前假定对手选择', () => {

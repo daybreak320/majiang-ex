@@ -37,6 +37,18 @@ export const STRONG_TWO_TILE_COMBOS: ReadonlyArray<readonly [number, number]> = 
   [3, 8],
 ] as const
 
+/** 金线：同一花色按 1-4-7、2-5-8、3-6-9 划分的三条线。 */
+export type GoldenLine = '147' | '258' | '369'
+
+export function goldenLineOf(value: number): GoldenLine {
+  const remainder = value % 3
+  return remainder === 1 ? '147' : remainder === 2 ? '258' : '369'
+}
+
+export function goldenLineLabel(tile: Pick<Tile, 'type' | 'value'>): string {
+  return `${tile.type}${goldenLineOf(tile.value)}线`
+}
+
 /** 判断某个 (a, b) 数字对是否属于强组合（含顺子与隔张两种表达，如 2-7 隔张、3-7 顺搭） */
 export function isStrongCombo(a: number, b: number): boolean {
   const low = Math.min(a, b)

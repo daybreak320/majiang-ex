@@ -38,6 +38,26 @@ export interface OpponentThreat {
   hasClearedDingque: boolean
 }
 
+export type OpponentHandPossibility = 'qingyise' | 'duiduihu' | 'ordinary'
+
+export interface EndgameOpponentInference {
+  playerId: PlayerId
+  position: string
+  dingque: TileType | null
+  clearedDingque: boolean
+  possibilities: Array<{ kind: OpponentHandPossibility, label: string, confidence: 'high' | 'medium' | 'low', reason: string }>
+  dangerTypes: TileType[]
+  safeTypes: TileType[]
+  caveat: string
+}
+
+export interface EndgameDefenseInference {
+  active: boolean
+  wallTiles: number
+  premise: string
+  opponents: EndgameOpponentInference[]
+}
+
 const EMPTY_OPPORTUNITY: OpportunityResult = { total: 0, waits: [], structuralWaits: [] }
 
 function publicTiles(state: GameState): TileInstance[] {
@@ -164,6 +184,68 @@ export function detectOpponentThreats(state: GameState, playerId: PlayerId = 0):
       hasClearedDingque,
     }]
   })
+}
+
+/**
+ * 尾盘公开信息猜牌：只读取定缺、牌河、副露和自己的手牌。
+ * “大家不能花猪、不能不听”仅是用户要求的终局压力前提，不能把未公开暗手推成确定牌型。
+ */
+export function inferEndgameDefense(state: GameState, playerId: PlayerId = 0, lateWall = 16): EndgameDefenseInference {
+  const active = state.wall.length <= lateWall && state.phase !== 'dingque' && state.phase !== 'finished'
+  const ownHand = state.players[playerId].hand
+  const opponents = state.players.flatMap((opponent): EndgameOpponentInference[] => {
+    if (opponent.id === playerId || opponent.hasWon)
+      return []
+
+    const clearedDingque = opponent.dingque !== null && opponent.discards.some(tile => tile.type === opponent.dingque)
+    const meldTiles = opponent.melds.flatMap(meld => meld.tiles)
+    const nonDingqueTypes = MILESTONE_1_RULES.tileTypes.filter(type => type !== opponent.dingque)
+    const exposedByType = nonDingqueTypes.map(type => ({
+      type,
+      count: meldTiles.filter(tile => tile.type === type).length,
+      river: opponent.discards.filter(tile => tile.type === type).length,
+    }))
+    const dominant = [...exposedByType].sort((a, b) => b.count - a.count || a.river - b.river)[0]
+    const allMeldsSameType = meldTiles.length >= 2 && dominant !== undefined && dominant.count === meldTiles.length
+    const tripletMelds = opponent.melds.filter(meld => meld.kind === 'peng' || meld.kind.includes('Gang')).length
+    const possible: EndgameOpponentInference['possibilities'] = []
+
+    if (allMeldsSameType && dominant !== undefined) {
+      possible.push({
+        kind: 'qingyise', label: `偏${dominant.type}门清一色`, confidence: clearedDingque ? 'high' : 'medium',
+        reason: `公开副露 ${opponent.melds.length} 组都在${dominant.type}门${clearedDingque ? `，且已清${opponent.dingque}` : ''}；尾盘应把${dominant.type}门视作高危。`,
+      })
+    }
+    if (tripletMelds >= 2) {
+      possible.push({
+        kind: 'duiduihu', label: '对对胡 / 碰碰胡倾向', confidence: tripletMelds >= 3 ? 'high' : 'medium', reason: `已公开 ${tripletMelds} 组刻子或杠子，剩余暗手很可能继续收对子或单吊。` })
+    }
+    if (possible.length === 0) {
+      possible.push({ kind: 'ordinary', label: '普通听牌或快速收口', confidence: 'low', reason: `${clearedDingque ? `已清${opponent.dingque}` : '定缺尚未完全清出'}，但没有足够公开结构锁定大牌；仍需按尾盘听牌压力防守。` })
+    }
+
+    const dangerTypes = [...new Set(possible.filter(item => item.kind === 'qingyise').flatMap(() => dominant === undefined ? [] : [dominant.type]))]
+    const safeTypes = opponent.dingque === null ? [] : [opponent.dingque]
+    const ownHeldDanger = dangerTypes.filter(type => ownHand.some(tile => tile.type === type))
+    return [{
+      playerId: opponent.id,
+      position: PLAYER_POSITIONS[opponent.id],
+      dingque: opponent.dingque,
+      clearedDingque,
+      possibilities: possible,
+      dangerTypes: ownHeldDanger,
+      safeTypes,
+      caveat: ownHeldDanger.length > 0
+        ? `你手里仍有${ownHeldDanger.join('、')}，但“对手可能做该门”不等于每张都必点；优先结合现物、熟张与副露继续筛。`
+        : '未从公开结构锁定特定危险门；优先找对手现物与已清定缺门。',
+    }]
+  })
+  return {
+    active,
+    wallTiles: state.wall.length,
+    premise: '按“各家都必须清定缺、尾盘都要争取听牌”作防守压力推演；只使用定缺、牌河、副露和你的手牌，不读取对手暗牌。',
+    opponents,
+  }
 }
 
 function lowValueDiscardWin(state: GameState, playerId: PlayerId, opportunity: OpportunityResult): boolean {

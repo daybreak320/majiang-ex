@@ -13,7 +13,6 @@ const PATTERNS = [
   { id: 'qiduizi', name: '七对子', desc: '7个对子组成的胡牌', icon: '🀄', color: 'from-purple-500 to-pink-500' },
   { id: 'pengpenghu', name: '碰碰胡', desc: '全部由刻子和将组成', icon: '🎯', color: 'from-red-500 to-orange-500' },
   { id: 'qingyise', name: '清一色', desc: '全部同一花色', icon: '✨', color: 'from-blue-500 to-cyan-500' },
-  { id: 'hunyise', name: '混一色', desc: '只有一种花色+字牌', icon: '🌈', color: 'from-green-500 to-emerald-500' },
   { id: 'pinghu', name: '平胡', desc: '基本胡牌牌型', icon: '📋', color: 'from-yellow-500 to-amber-500' },
 ]
 

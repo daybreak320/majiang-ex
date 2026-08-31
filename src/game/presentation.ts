@@ -4,13 +4,17 @@ import type { GameCommand, GameEvent, GameState, MeldKind, PlayerId, ScoreReason
 import { REVIEW_ALGORITHM_VERSION } from '../review/analyzer'
 import { chooseAICommand, getAIReason } from './ai'
 import { createInitialGame } from './core'
+import type { SpecialTrainingKind } from './core'
 
-export const PLAYER_NAMES = ['你', '青锋', '沉舟', '逐浪'] as const
+export const PLAYER_NAMES = ['你', '做大做强', '搞死搞残', '先跑为敬'] as const
 
 export const AI_STYLE_LABELS = {
-  aggressive: '进攻型',
-  steady: '稳健型',
-  efficient: '效率型',
+  aggressive: '进攻型 · 爱冲',
+  steady: '稳健型 · 看河',
+  efficient: '效率型 · 牌效党',
+  qingyise: '清一色狂热爱好者',
+  turtle: '极度保守 · 常年逃跑',
+  pengManiac: '自摸杠开狂热爱好者',
 } as const
 
 export const SCORE_REASON_LABELS: Record<ScoreReason, string> = {
@@ -364,6 +368,13 @@ export interface PlayerPortrait {
   focus: string[]
 }
 
+export interface TrainingRecommendation {
+  kind: SpecialTrainingKind
+  title: string
+  reason: string
+  evidence: string
+}
+
 export interface HistoryInsight {
   gameCount: number
   totalScore: number
@@ -393,6 +404,62 @@ const ISSUE_ADVICE: Record<string, string> = {
   attackDefense: '攻防训练：牌墙后段先找熟张与安全线；牌效只领先一点时，不值得用危险牌交换。',
   strongCombo: '结构训练：2-7、3-7、2-8、3-8是高辐射组合，除非能换来更大的活张优势，否则先保护它。',
   meld: '鸣牌训练：碰杠前先问一句——副露后还剩几种叫口、能否更快下叫、暴露风险是否值得。',
+}
+
+/** 把复盘中最需要改正的决策，落到可直接进入的专项局面。 */
+export function recommendTraining(entries: readonly GameHistoryEntry[]): TrainingRecommendation | null {
+  if (entries.length === 0)
+    return null
+  const scope = entries.slice(0, 8)
+  const counts = scope.reduce((total, entry) => {
+    total.tileEfficiency += entry.issues.filter(issue => issue.kind === 'tileEfficiency').length
+    total.strongCombo += entry.issues.filter(issue => issue.kind === 'strongCombo').length
+    total.attackDefense += entry.issues.filter(issue => issue.kind === 'attackDefense').length
+    total.meld += entry.issues.filter(issue => issue.kind === 'meld').length
+    total.dealtIn += entry.dealtIn
+    return total
+  }, { tileEfficiency: 0, strongCombo: 0, attackDefense: 0, meld: 0, dealtIn: 0 })
+
+  const top = (Object.entries(counts) as Array<[keyof typeof counts, number]>).sort((a, b) => b[1] - a[1])[0]
+  if (top === undefined || top[1] === 0)
+    return {
+      kind: 'attack-qingyise',
+      title: '巩固速度与价值取舍',
+      reason: '最近没有重复出现的高优先级问题，先用清一色专项练“保留做大胚子”和“及时下叫”的平衡。',
+      evidence: `已参考近 ${scope.length} 局复盘`,
+    }
+
+  const [kind, count] = top
+  if (kind === 'attackDefense' || kind === 'dealtIn') {
+    return {
+      kind: 'defense-big-hands',
+      title: '先补防守止损',
+      reason: '你的复盘里尾盘危险牌或点炮信号最突出。先练在三家做大时找现物、缩小危险门，而不是硬追一两张进张。',
+      evidence: `近 ${scope.length} 局：攻防问题 ${counts.attackDefense} 次，点炮 ${counts.dealtIn} 次`,
+    }
+  }
+  if (kind === 'meld') {
+    return {
+      kind: 'attack-jingoudiao',
+      title: '先补鸣牌与杠的取舍',
+      reason: '鸣牌决策反复出现问题。用金钩钓与杠开专项练“碰/杠后能否更快下叫”和“为杠付出的风险”。',
+      evidence: `近 ${scope.length} 局：鸣牌问题 ${count} 次`,
+    }
+  }
+  if (kind === 'strongCombo') {
+    return {
+      kind: 'attack-qingyise',
+      title: '先补强组合保护',
+      reason: '你较常把能同时接住多种来牌的搭子拆开。先在单门集中局练保搭、保宽叫，再决定是否为了清一色提速。',
+      evidence: `近 ${scope.length} 局：强组合问题 ${count} 次`,
+    }
+  }
+  return {
+    kind: 'endgame-count',
+    title: '先补活张与残局算牌',
+    reason: '当前最常见的是把更宽的转和路线打窄。残局会把公开牌河和十张牌墙固定下来，强迫你逐张核对还剩什么。',
+    evidence: `近 ${scope.length} 局：转和路线问题 ${count} 次`,
+  }
 }
 
 function buildPlayerPortrait(entries: readonly GameHistoryEntry[], issueGroups: HistoryIssueGroup[], decisionCount: number, totalLoss: number, dangerCount: number, comboBreaks: number): PlayerPortrait {

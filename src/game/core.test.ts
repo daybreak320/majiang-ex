@@ -2,11 +2,13 @@ import type { TileType } from '../types'
 import type { TileInstance } from './types'
 import { describe, expect, it } from 'vitest'
 import { getLegalActions } from './engine'
+import { buildDiscardAssistant } from './assistant'
 import {
   chooseTimeoutDiscard,
   createInitialGame,
   createSpecialTrainingGame,
   createSeededRandom,
+  getWideBedScenario,
   createTileSet,
   getLegalDiscards,
   recommendDingque,
@@ -77,19 +79,61 @@ describe('牌组与开局', () => {
     expect(createSpecialTrainingGame(88, 'attack-qingyise')).toEqual(createSpecialTrainingGame(88, 'attack-qingyise'))
   })
 
-  it('清一色与金钩钓专项给的是可教学胚子，不允许开局直接自摸胡', () => {
-    for (const kind of ['attack-qingyise', 'attack-jingoudiao', 'defense-race-qingyise'] as const) {
-      const game = createSpecialTrainingGame(554512056, kind)
+  it('下宽叫专项轮换清一色与杠开残局，首巡均可比较不同宽度的叫口', () => {
+    const qingyise = createSpecialTrainingGame(960, 'endgame-qingyise-tenpai')
+    expect(qingyise.wall).toHaveLength(10)
+    expect(qingyise.players[0].hand).toHaveLength(14)
+    expect(qingyise.players[0].hand.every(tile => tile.type === '万')).toBe(true)
+    expect(qingyise.players[0].dingque).not.toBe('万')
+    const qingyiseCandidates = buildDiscardAssistant(qingyise, 0).candidates
+    expect(qingyiseCandidates.some(candidate => candidate.nextDrawWinProbability !== null)).toBe(true)
+    expect(new Set(qingyiseCandidates.filter(candidate => candidate.nextDrawWinProbability !== null).map(candidate => candidate.opportunity)).size).toBeGreaterThan(1)
+
+    const kongDraw = createSpecialTrainingGame(961, 'endgame-qingyise-tenpai')
+    expect(kongDraw.wall).toHaveLength(10)
+    expect(kongDraw.players[0].melds).toHaveLength(4)
+    expect(kongDraw.players[0].melds.every(meld => meld.kind === 'anGang')).toBe(true)
+    expect(kongDraw.players[0].hand).toHaveLength(2)
+    expect(buildDiscardAssistant(kongDraw, 0).candidates).toHaveLength(2)
+    expect(createSpecialTrainingGame(960, 'endgame-qingyise-tenpai')).toEqual(qingyise)
+  })
+
+  it('金钩钓残局固定四副碰牌与两张候选，每次只需比较留哪张单吊', () => {
+    const game = createSpecialTrainingGame(554512056, 'attack-jingoudiao')
+    expect(game.players[0].melds).toHaveLength(4)
+    expect(game.players[0].melds.every(meld => meld.kind === 'peng')).toBe(true)
+    expect(game.players[0].hand).toHaveLength(2)
+    expect(getLegalActions(game, 0).filter(action => action.type === 'discard')).toHaveLength(2)
+    const candidates = buildDiscardAssistant(game, 0).candidates
+    expect(candidates).toHaveLength(2)
+    expect(new Set(candidates.map(candidate => candidate.opportunity)).size).toBeGreaterThan(1)
+  })
+
+  it('宽床四类分支从三家对手缺万的起手局开始，且不允许开局直接自摸胡', () => {
+    expect(getWideBedScenario(0).route).toBe('清一色')
+    expect(getWideBedScenario(1).route).toBe('七对自摸')
+    expect(getWideBedScenario(2).route).toBe('普通自摸')
+    expect(getWideBedScenario(3).route).toBe('素胡走人')
+    for (const seed of [0, 1, 2, 3]) {
+      const game = createSpecialTrainingGame(seed, 'attack-qingyise')
       const hu = getLegalActions(game, 0).find(action => action.type === 'hu')
-      expect(hu, `${kind} 不应起手天胡`).toBeUndefined()
+      expect(hu, `宽床分支 ${seed} 不应起手天胡`).toBeUndefined()
     }
+    const jingoudiao = createSpecialTrainingGame(554512056, 'attack-jingoudiao')
+    expect(getLegalActions(jingoudiao, 0).find(action => action.type === 'hu')).toBeUndefined()
   })
 
   it('专项训练用固定公开牌河提供倾向证据，残局十张牌墙也可复现', () => {
-    const qingyise = createSpecialTrainingGame(88, 'attack-qingyise')
-    expect(qingyise.players[1].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['5万', '6万', '7万', '8万', '9万'])
-    expect(qingyise.players[2].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['5万', '6万', '7万', '8万', '9万'])
-    expect(qingyise.players[3].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['2条', '3条', '4条'])
+    // 宽床训练从三家同缺刚完成后的第一巡开始：无人提前成型、副露或亮出牌河。
+    for (const seed of [0, 1, 2, 3]) {
+      const qingyise = createSpecialTrainingGame(seed, 'attack-qingyise')
+      expect(qingyise.players[0].dingque).toBe('筒')
+      expect(qingyise.players.slice(1).every(player => player.dingque === '万')).toBe(true)
+      expect(qingyise.players.every(player => player.discards.length === 0)).toBe(true)
+      expect(qingyise.players.every(player => player.melds.length === 0)).toBe(true)
+      expect(qingyise.players[0].hand.some(tile => tile.type === '万')).toBe(true)
+      expect(qingyise.players.slice(1).every(player => player.hand.every(tile => tile.type !== '万'))).toBe(true)
+    }
 
     const bigHands = createSpecialTrainingGame(88, 'defense-big-hands')
     expect(bigHands.players[1].melds[0]?.tiles.map(tile => `${tile.value}${tile.type}`)).toEqual(['7条', '7条', '7条'])

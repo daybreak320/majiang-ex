@@ -2,7 +2,12 @@ import type { TileType } from '../types'
 
 export type PlayerId = 0 | 1 | 2 | 3
 export type RulesVersion = 'm1.1'
-export type AIStyle = 'aggressive' | 'steady' | 'efficient'
+export type AIStyle = 'aggressive' | 'steady' | 'efficient' | 'qingyise' | 'turtle' | 'pengManiac'
+
+export interface OpponentConfig {
+  name: string
+  aiStyle: AIStyle
+}
 
 export interface TileInstance {
   id: string
@@ -43,6 +48,7 @@ export interface PlayerState {
   winInfo: WinInfo | null
   passedWinValue: number | null
   aiStyle: AIStyle | null
+  displayName?: string
 }
 
 export type ResponseChoice

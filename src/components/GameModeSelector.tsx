@@ -1,11 +1,20 @@
+import type { SpecialTrainingKind } from '../game/core'
 import { motion } from 'framer-motion'
 
 export type GameMode = 'ting' | 'discard' | 'pattern' | 'speed'
+
+interface SpecialTrainingEntry {
+  kind: SpecialTrainingKind
+  title: string
+  summary: string
+}
 
 interface GameModeSelectorProps {
   currentMode: GameMode
   onSelectMode: (mode: GameMode) => void
   getModeAccuracy?: (mode: GameMode) => number
+  specialTrainings?: SpecialTrainingEntry[]
+  onStartSpecialTraining?: (kind: SpecialTrainingKind) => void
 }
 
 const GAME_MODES = [
@@ -39,7 +48,7 @@ const GAME_MODES = [
   },
 ]
 
-export function GameModeSelector({ currentMode, onSelectMode, getModeAccuracy }: GameModeSelectorProps) {
+export function GameModeSelector({ currentMode, onSelectMode, getModeAccuracy, specialTrainings = [], onStartSpecialTraining }: GameModeSelectorProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       {GAME_MODES.map((mode, index) => {
@@ -84,6 +93,23 @@ export function GameModeSelector({ currentMode, onSelectMode, getModeAccuracy }:
           </motion.button>
         )
       })}
+      {specialTrainings.map((training, index) => (
+        <motion.button
+          key={training.kind}
+          className="mode-card text-left mode-card-special"
+          onClick={() => onStartSpecialTraining?.(training.kind)}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: (GAME_MODES.length + index) * 0.06 }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center text-2xl mb-3 shadow-lg">♟</div>
+          <h3 className="text-lg font-bold text-white mb-1">{training.title}</h3>
+          <p className="text-sm text-gray-400">{training.summary}</p>
+          <span className="mt-3 inline-flex text-xs text-cyan-200">进入实战专项 →</span>
+        </motion.button>
+      ))}
     </div>
   )
 }

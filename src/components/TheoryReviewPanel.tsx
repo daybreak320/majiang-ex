@@ -152,25 +152,52 @@ function HighlightConclusion({ highlight, decision, seed }: { highlight: ReviewH
   )
 }
 
-function OpportunityTrend({ values }: { values: number[] }) {
-  if (values.length === 0)
+function formatWaits(waits: DiscardDecision['actualWaits']): string {
+  return waits.length === 0
+    ? '暂无能直接推进的活张'
+    : waits.map(wait => `${wait.tile.value}${wait.tile.type}×${wait.remaining}`).join(' · ')
+}
+
+function OpportunityTrend({ decisions }: { decisions: DiscardDecision[] }) {
+  const evaluable = decisions.filter(decision => decision.evaluable)
+  if (evaluable.length === 0)
     return <p className="muted">本局没有足够的暗手节点可比较转和空间。</p>
-  const maximum = Math.max(...values, 1)
+  const maximum = Math.max(...evaluable.map(decision => decision.opportunityActual), 1)
+  const lowest = Math.min(...evaluable.map(decision => decision.opportunityActual))
+  const firstLowest = evaluable.findIndex(decision => decision.opportunityActual === lowest)
   return (
     <div className="opportunity-trend">
-      <div className="opportunity-chart" aria-label={`各次出牌后的活张数：${values.join('、')}`} role="img">
-        {values.map((value, index) => (
-          <span className="opportunity-column" key={`${index}-${value}`} title={`第 ${index + 1} 次出牌后：${value} 张活张`}>
-            <i style={{ height: `${Math.max(6, Math.round(value / maximum * 100))}%` }} />
-            <b>{value}</b>
-            <small>{index + 1}</small>
-          </span>
-        ))}
+      <div className="opportunity-summary" role="status">
+        <strong>这局的空间从最多 {maximum} 张活张，走到最低 {lowest} 张。</strong>
+        <span>{firstLowest > 0 ? `第 ${firstLowest + 1} 次可比出牌是当前最窄的拐点，重点看它前后的路线差异。` : '第一处可比节点已经很窄，优先保证下叫和兑现速度。'}</span>
       </div>
-      <div className="opportunity-axis">
-        <span>可兑现的活张</span>
-        <span>出牌次序</span>
+      <div className="opportunity-route" aria-label="每次出牌后的转和路线">
+        {evaluable.map((decision, index) => {
+          const loss = decision.opportunityLoss
+          const isTurningPoint = index === firstLowest
+          return (
+            <article className={`opportunity-step ${isTurningPoint ? 'opportunity-step-turning' : ''}`} key={decision.sequence}>
+              <div className="opportunity-step-rail" aria-hidden="true">
+                <i style={{ height: `${Math.max(12, Math.round(decision.opportunityActual / maximum * 100))}%` }} />
+                <b>{decision.opportunityActual}</b>
+              </div>
+              <div className="opportunity-step-copy">
+                <div className="opportunity-step-heading">
+                  <span>{`第 ${index + 1} 次出牌 · 牌墙剩 ${decision.wallTiles} 张`}</span>
+                  {isTurningPoint && <em>空间拐点</em>}
+                  {decision.isForcedDingque && <em className="forced-tag">定缺强制</em>}
+                </div>
+                <p><strong>{`你打了 ${decision.tile.value}${decision.tile.type}`}</strong>{loss > 0 ? `，比更宽的选择少留下 ${loss} 张活张。` : '，保住了当时最宽的转和空间。'}</p>
+                <div className="opportunity-waits">
+                  <span><b>实战留下</b>{formatWaits(decision.actualWaits)}</span>
+                  {loss > 0 && <span><b>更宽路线</b>{formatWaits(decision.bestWaits)}{`（可改打 ${decision.bestTiles.map(tile => `${tile.value}${tile.type}`).join('、')}）`}</span>}
+                </div>
+              </div>
+            </article>
+          )
+        })}
       </div>
+      <p className="opportunity-footnote">活张是指：在当前公开牌与手牌条件下，摸到后能直接让手牌更接近听牌或和牌的牌。它不是胜率；对手副露、牌墙长度和安全性仍要一起看。</p>
     </div>
   )
 }
@@ -204,10 +231,10 @@ export function TheoryReviewPanel({ report, seed }: { report: ReviewReport, seed
       </div>
       <div className="opportunity-section">
         <div>
-          <h4>转和空间变化</h4>
-          <p className="muted">每次出牌后还剩多少张牌能直接把手牌推向听牌或和牌</p>
+          <h4>转和路线图</h4>
+          <p className="muted">把每次关键出牌放回当时的牌墙与活张：你保住了哪条路，又在哪一巡把空间走窄。</p>
         </div>
-        <OpportunityTrend values={report.stats.opportunityTrend} />
+        <OpportunityTrend decisions={report.decisions} />
       </div>
       <div className="review-focus-list">
         {majorIssues.map((issue, index) => (

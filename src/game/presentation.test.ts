@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildReport } from '../review/analyzer'
 import { createInitialGame, recommendDingque } from './core'
 import { executeCommand } from './engine'
-import { buildEventTimeline, buildGameReview, buildSettlementSummary, buildTheoryHistoryEntry, formatGameEvent } from './presentation'
+import { buildEventTimeline, buildGameReview, buildSettlementSummary, buildTheoryHistoryEntry, formatGameEvent, recommendTraining } from './presentation'
 
 function transfer(sequence: number, from: 0 | 1 | 2 | 3, to: 0 | 1 | 2 | 3, amount: number, reason: Extract<GameEvent, { type: 'score_transferred' }>['reason']): Extract<GameEvent, { type: 'score_transferred' }> {
   return { sequence, type: 'score_transferred', from, to, amount, reason, sourceEventSequence: sequence }
@@ -52,7 +52,7 @@ describe('结算页投影', () => {
     expect(buildEventTimeline(state, true)).toHaveLength(state.events.length)
     expect(buildEventTimeline(state, true).map(item => item.sequence)).toEqual([1, 2, 3, 4, 5, 6])
     expect(formatGameEvent(state.events[1])).toContain('杠后补张')
-    expect(formatGameEvent(state.events[2])).toBe('沉舟选择杠')
+    expect(formatGameEvent(state.events[2])).toBe('搞死搞残选择杠')
     expect(formatGameEvent(state.events[4])).toBe('抢杠胡成立')
     expect(formatGameEvent(state.events[5])).toContain('三家已胡')
     expect(state.events).toEqual(events)
@@ -92,6 +92,16 @@ describe('结算页投影', () => {
     const player = buildSettlementSummary(state).players[0]
     expect(player.kongCounts).toEqual({ mingGang: 1, buGang: 1, anGang: 1 })
     expect(player).toMatchObject({ kongIncome: 2, kongExpense: 1, dealtIn: 1 })
+  })
+
+  it('按近局反复问题推荐对应专项，而不是随机跳题', () => {
+    const base = {
+      finishedAt: Date.now(), seed: 21, endReason: '牌墙已摸完', score: 0, rank: 2, hasWon: false, winFan: null,
+      dealtIn: 0, decisionsExcellent: 0, decisionsReasonable: 2, decisionsImprovable: 1,
+    }
+    expect(recommendTraining([{ ...base, issues: [{ kind: 'attackDefense', title: '尾盘危险', actual: '打3万', recommended: '打1万', reason: '风险高' }] }])?.kind).toBe('defense-big-hands')
+    expect(recommendTraining([{ ...base, issues: [{ kind: 'strongCombo', title: '拆搭子', actual: '打2条', recommended: '打9万', reason: '拆强组合' }] }])?.kind).toBe('attack-qingyise')
+    expect(recommendTraining([{ ...base, issues: [{ kind: 'tileEfficiency', title: '路线变窄', actual: '打4筒', recommended: '打9万', reason: '活张更少' }] }])?.kind).toBe('endgame-count')
   })
 
   it('近三局历史摘要使用朱扬理论报告并记录评估版本', () => {

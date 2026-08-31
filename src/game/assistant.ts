@@ -1,6 +1,6 @@
 import type { Tile } from '../types'
 import type { GameCommand, GameState, LegalAction, PlayerId, TileInstance } from './types'
-import { brokenStrongCombos, countOpportunities, rateOpportunity } from '../knowledge/mahjongTheory'
+import { brokenStrongCombos, countOpportunities, goldenLineLabel, rateOpportunity } from '../knowledge/mahjongTheory'
 import { chooseAICommand, getAIReason } from './ai'
 import { MILESTONE_1_RULES } from './rules'
 import { calculateScore } from './scoring'
@@ -469,8 +469,8 @@ function buildCoachMessage(state: GameState, chosen: DiscardCandidateAnalysis | 
       mode: 'decision',
       headline: `${objectiveLabel(objective)} · 打 ${chosen.tile.value}${chosen.tile.type}`,
       guidance: `你已听 ${waits || '暂无活叫'}，共 ${chosen.opportunity} 张活张。现在的重点是把这次可兑现的机会拿到手；除非公开局势明确支持做大，否则不要为了虚拟番型拆宽叫。`,
-      evidence: [`${chosen.structuralWaits} 种叫口 / ${chosen.opportunity} 张活张`, `下一摸直接和牌率 ${(chosen.nextDrawWinProbability * 100).toFixed(1)}%`, chosen.brokenCombos.length === 0 ? '未拆强组合' : `会拆 ${chosen.brokenCombos.map(([a, b]) => `${a}-${b}`).join('、')} 强组合`],
-      practice: '点选另一张候选牌，只问一件事：它能否在不缩窄叫口的前提下多换到明确价值？',
+      evidence: [`${chosen.structuralWaits} 种叫口 / ${chosen.opportunity} 张活张`, `下一摸直接和牌率 ${(chosen.nextDrawWinProbability * 100).toFixed(1)}%`, `金线：打出${goldenLineLabel(chosen.tile)}；比较候选时要看同线 1-4-7 / 2-5-8 / 3-6-9 的进张是否被一并切断`, chosen.brokenCombos.length === 0 ? '未拆强组合' : `会拆 ${chosen.brokenCombos.map(([a, b]) => `${a}-${b}`).join('、')} 强组合`],
+      practice: '点选另一张候选牌：先比活张和叫口，再核对是否把同门金线的可接进张一并打散。',
     }
   }
   return {

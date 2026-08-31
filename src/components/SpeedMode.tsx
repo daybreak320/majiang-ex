@@ -1,9 +1,10 @@
 import type { Tile } from '../types'
 import { motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
-import { countTingTiles, generateRandomHand } from '../utils/majiang'
+import { useEffect, useMemo, useState } from 'react'
+import { countTingTiles, generateRandomHand, sortTilesByMahjongOrder } from '../utils/majiang'
 import { trackAnswer } from '../utils/tracker'
 import { AnimatedMajiangTile } from './AnimatedMajiangTile'
+import { SortButton } from './SortButton'
 import { TimerDisplay } from './TimerDisplay'
 
 interface SpeedModeProps {
@@ -26,6 +27,8 @@ export function SpeedMode({ onComplete }: SpeedModeProps) {
   const [showFeedback, setShowFeedback] = useState(false)
   const [lastCorrect, setLastCorrect] = useState<boolean | null>(null)
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState(false)
+  const [isSortedHandTile, setIsSortedHandTile] = useState(false)
+  const displayHand = useMemo(() => isSortedHandTile ? sortTilesByMahjongOrder(gameState.hand) : gameState.hand, [gameState.hand, isSortedHandTile])
 
   useEffect(() => {
     const correct = gameState.tingCount
@@ -131,8 +134,15 @@ export function SpeedMode({ onComplete }: SpeedModeProps) {
       </div>
 
       <div className="mb-6">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 className="text-lg font-bold text-white">题目手牌</h3>
+            <p className="text-xs text-gray-400">默认乱序；需要降低识别难度时可手动排序</p>
+          </div>
+          <SortButton isSorted={isSortedHandTile} onClick={() => setIsSortedHandTile(current => !current)} />
+        </div>
         <div className="flex flex-wrap justify-center gap-1 p-3 bg-black/20 rounded-xl">
-          {gameState.hand.map((tile, index) => (
+          {displayHand.map((tile, index) => (
             <AnimatedMajiangTile
               key={`speed-${tile.type}${tile.value}-${index}`}
               tile={tile}

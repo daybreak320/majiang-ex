@@ -34,8 +34,12 @@ interface CandidateAnalysis {
 
 interface HandState {
   hand: Tile[]
+  /** 四川麻将定缺：仍持有该门时必须优先清掉，否则终局会有花猪风险。 */
+  dingque: TileType
   analyses: CandidateAnalysis[]
   best: CandidateAnalysis
+  /** 当前定缺规则允许打出的候选；仍持缺门时只能打缺门。 */
+  legalKeys: Set<string>
   /** 机会数并列且不额外拆强组合的候选（均视为正解） */
   correctKeys: Set<string>
 }
@@ -207,9 +211,10 @@ function analyzeCandidate(tile: Tile, hand: Tile[]): CandidateAnalysis {
   }
 }
 
-function analyzeHand(hand: Tile[]): HandState {
+function analyzeHand(hand: Tile[], dingque: TileType): HandState {
   const seen = new Set<string>()
   const analyses: CandidateAnalysis[] = []
+  const hasDingqueTiles = hand.some(tile => tile.type === dingque)
 
   for (const tile of hand) {
     const key = tileKey(tile)
@@ -219,15 +224,19 @@ function analyzeHand(hand: Tile[]): HandState {
     analyses.push(analyzeCandidate(tile, hand))
   }
 
-  const best = analyses.reduce((top, current) => (current.score > top.score ? current : top))
+  const legalAnalyses = hasDingqueTiles
+    ? analyses.filter(analysis => analysis.tile.type === dingque)
+    : analyses
+  const best = legalAnalyses.reduce((top, current) => (current.score > top.score ? current : top))
+  const legalKeys = new Set(legalAnalyses.map(analysis => tileKey(analysis.tile)))
   const correctKeys = new Set(
-    analyses
+    legalAnalyses
       .filter(analysis => analysis.opportunityTotal === best.opportunityTotal
         && analysis.brokeCombos.length <= best.brokeCombos.length)
       .map(analysis => tileKey(analysis.tile)),
   )
 
-  return { hand, analyses, best, correctKeys }
+  return { hand, dingque, analyses, best, legalKeys, correctKeys }
 }
 
 // ---------------------------------------------------------------------------
@@ -261,29 +270,32 @@ function drawRandom(deck: Tile[]): Tile | null {
   return deck.splice(Math.floor(Math.random() * deck.length), 1)[0]
 }
 
-function randType(): TileType {
-  return VALID_TYPES[Math.floor(Math.random() * VALID_TYPES.length)]
+function randType(types: readonly TileType[] = VALID_TYPES): TileType {
+  return types[Math.floor(Math.random() * types.length)]
 }
 
 function randValue(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1))
 }
 
-function tryBuildOneAwayHand(): Tile[] | null {
+function tryBuildOneAwayHand(): { hand: Tile[], dingque: TileType } | null {
   const deck = generateDeck()
   const hand: Tile[] = []
+  const dingque = randType()
+  const availableTypes = VALID_TYPES.filter(type => type !== dingque)
 
+  // 出牌练习默认已经完成定缺：手牌只在剩余两门内构造，直接比较牌效。
   // 3 个面子（顺子为主，偶尔刻子）
   for (let meld = 0; meld < 3; meld++) {
     if (Math.random() < 0.8) {
-      const type = randType()
+      const type = randType(availableTypes)
       const value = randValue(1, 7)
       if (!(takeFromDeck(deck, type, value) && takeFromDeck(deck, type, value + 1) && takeFromDeck(deck, type, value + 2)))
         return null
       hand.push({ type, value }, { type, value: value + 1 }, { type, value: value + 2 })
     }
     else {
-      const type = randType()
+      const type = randType(availableTypes)
       const value = randValue(1, 9)
       if (!(takeFromDeck(deck, type, value) && takeFromDeck(deck, type, value) && takeFromDeck(deck, type, value)))
         return null
@@ -292,14 +304,14 @@ function tryBuildOneAwayHand(): Tile[] | null {
   }
 
   // 将对
-  const pairType = randType()
+  const pairType = randType(availableTypes)
   const pairValue = randValue(1, 9)
   if (!(takeFromDeck(deck, pairType, pairValue) && takeFromDeck(deck, pairType, pairValue)))
     return null
   hand.push({ type: pairType, value: pairValue }, { type: pairType, value: pairValue })
 
   // 搭子（两面搭）
-  const runType = randType()
+  const runType = randType(availableTypes)
   const runValue = randValue(1, 8)
   if (!(takeFromDeck(deck, runType, runValue) && takeFromDeck(deck, runType, runValue + 1)))
     return null
@@ -316,40 +328,39 @@ function tryBuildOneAwayHand(): Tile[] | null {
         floatTile = { type: runType, value }
     }
   }
-  if (!floatTile)
-    floatTile = drawRandom(deck)
+  if (!floatTile) {
+    const type = randType(availableTypes)
+    const index = deck.findIndex(tile => tile.type === type)
+    if (index >= 0)
+      floatTile = deck.splice(index, 1)[0]
+  }
   if (!floatTile)
     return null
   hand.push(floatTile)
 
-  return hand
+  return { hand, dingque }
 }
 
 function generateHand(): HandState {
-  // 第一轮：要求有理论区分度（最佳机会数 ≥ 8 且有候选低于它）
+  // 出牌练习默认已经打缺，题目只使用两门牌，直接训练清缺后的机会数、金线与搭子取舍。
   for (let attempt = 0; attempt < 60; attempt++) {
-    const hand = tryBuildOneAwayHand()
-    if (!hand)
+    const built = tryBuildOneAwayHand()
+    if (!built)
       continue
-    const state = analyzeHand(hand)
-    if (state.best.opportunityTotal >= 8 && state.analyses.some(analysis => analysis.opportunityTotal < state.best.opportunityTotal))
+    const state = analyzeHand(built.hand, built.dingque)
+    if (state.best.opportunityTotal >= 4 && state.legalKeys.size > 0)
       return state
   }
-  // 兜底：任何一进听结构
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const hand = tryBuildOneAwayHand()
-    if (hand)
-      return analyzeHand(hand)
-  }
-  // 极端兜底：纯随机 14 张
-  const deck = generateDeck()
+  const dingque = randType()
+  const availableTypes = VALID_TYPES.filter(type => type !== dingque)
+  const deck = generateDeck().filter(tile => tile.type !== dingque)
   const hand: Tile[] = []
   for (let i = 0; i < 14; i++) {
     const tile = drawRandom(deck)
     if (tile)
       hand.push(tile)
   }
-  return analyzeHand(hand)
+  return analyzeHand(hand, availableTypes[0])
 }
 
 export function DiscardMode({ onComplete }: DiscardModeProps) {
@@ -411,9 +422,14 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
     return gameState.analyses.find(analysis => sameTile(analysis.tile, selectedTile)) ?? null
   }, [selectedTile, gameState])
 
+  const selectedTileIsLegal = selectedTile
+    ? gameState.legalKeys.has(tileKey(selectedTile))
+    : false
   const selectedTileIsCorrect = selectedTile
     ? gameState.correctKeys.has(tileKey(selectedTile))
     : false
+  const dingqueRemaining = gameState.hand.filter(tile => tile.type === gameState.dingque).length
+  const mustClearDingque = dingqueRemaining > 0
 
   /** 机会数对比列表：Top 4，用户选择不在其中则追加 */
   const comparison = useMemo(() => {
@@ -524,7 +540,7 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <span className="text-purple-300">刚摸进一张牌（14 张），打出哪张机会数最大？</span>
+          <span className="text-purple-300">已打缺：本题缺 {gameState.dingque}，手牌仅保留两门。现在比较机会数、金线和搭子结构，选出更宽的进张路线。</span>
         </motion.div>
       </div>
 
@@ -564,6 +580,12 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
         >
+          {mustClearDingque && (
+            <div className="mb-3 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+              <strong>定缺优先：</strong>
+              你定缺 {gameState.dingque}，本手仍有 {dingqueRemaining} 张 {gameState.dingque} 未清。此时先打缺门不是“牌效差”，而是川麻的合法优先级；若终局仍持缺门，会构成花猪。
+            </div>
+          )}
           {/* 推荐头 */}
           <div className="flex flex-wrap items-center gap-3 mb-3">
             <MajiangTile
@@ -644,18 +666,9 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
           {selectedTile && !selectedTileIsCorrect && selectedAnalysis && (
             <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-400/20">
               <div className="text-sm text-red-300 leading-relaxed">
-                你选的
-                {' '}
-                {formatTile(selectedAnalysis.tile)}
-                ：机会数
-                {' '}
-                {selectedAnalysis.opportunityTotal}
-                {' '}
-                张
-                {selectedAnalysis.brokeCombos.length > 0
-                  && `，且拆散了强组合 ${selectedAnalysis.brokeCombos.map(([a, b]) => `${a}-${b}`).join('、')}`}
-                {opportunityGap > 0 && `——比最佳选择少 ${opportunityGap} 张有效进张`}
-                {opportunityGap === 0 && selectedAnalysis.brokeCombos.length > 0 && '——机会数虽持平，但拆强组合是复盘重罚项'}
+                {!selectedTileIsLegal
+                  ? `你选的 ${formatTile(selectedAnalysis.tile)} 不属于当前允许的出牌：定缺 ${gameState.dingque} 还没清完，必须先打缺门，否则终局会保留花猪风险。`
+                  : <>你选的 {formatTile(selectedAnalysis.tile)}：机会数 {selectedAnalysis.opportunityTotal} 张{selectedAnalysis.brokeCombos.length > 0 && `，且拆散了强组合 ${selectedAnalysis.brokeCombos.map(([a, b]) => `${a}-${b}`).join('、')}`}{opportunityGap > 0 && `——比最佳选择少 ${opportunityGap} 张有效进张`}{opportunityGap === 0 && selectedAnalysis.brokeCombos.length > 0 && '——机会数虽持平，但拆强组合是复盘重罚项'}</>}
               </div>
             </div>
           )}

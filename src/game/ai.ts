@@ -143,8 +143,18 @@ function analyzeStructure(tiles: readonly TileInstance[]): Structure {
 
 function structureScore(tiles: readonly TileInstance[], style: AIStyle): number {
   const structure = analyzeStructure(tiles)
-  if (style === 'aggressive') {
-    return structure.groups * 13
+  if (style === 'qingyise') {
+    // 重度清一色爱好者：宁可牺牲部分顺子效率，也会强烈保留单门集中度。
+    return structure.groups * 11
+      + structure.pairs * 6
+      + structure.adjacent * 2
+      + structure.gaps
+      - structure.isolated
+      - structure.edges * 0.1
+      + structure.concentration * 0.42
+  }
+  if (style === 'aggressive' || style === 'pengManiac') {
+    return structure.groups * (style === 'pengManiac' ? 15 : 13)
       + structure.pairs * 7
       + structure.adjacent * 2.5
       + structure.gaps * 1.5
@@ -204,7 +214,7 @@ function opportunityScore(
   style: AIStyle,
   dingque: TileType | null,
 ): number {
-  const weight = style === 'efficient' ? 0.9 : style === 'aggressive' ? 0.7 : 0.55
+  const weight = style === 'efficient' ? 0.9 : style === 'aggressive' ? 0.7 : style === 'qingyise' ? 0.5 : style === 'turtle' ? 0.35 : style === 'pengManiac' ? 0.65 : 0.55
   return countOpportunities(tiles, visible, { dingque }).total * weight
 }
 
@@ -332,14 +342,16 @@ function chooseDiscard(state: GameState, playerId: PlayerId, actions: Extract<Le
   const view = buildAIView(state, playerId)
   const style = view.self.aiStyle
   const visible = publicVisible(view)
-  const dangerScale = style === 'steady' ? (1 + view.players.reduce((sum, player) => sum + player.melds.length, 0) * 0.12) : 0
+  const dangerScale = (style === 'steady' || style === 'turtle')
+    ? (style === 'turtle' ? 2.25 : 1) * (1 + view.players.reduce((sum, player) => sum + player.melds.length, 0) * 0.12)
+    : 0
   return [...actions].sort((a, b) => {
     const tileA = view.self.hand.find(tile => tile.id === a.tileId)!
     const tileB = view.self.hand.find(tile => tile.id === b.tileId)!
     const afterA = view.self.hand.filter(tile => tile.id !== a.tileId)
     const afterB = view.self.hand.filter(tile => tile.id !== b.tileId)
-    const dangerA = style === 'steady' ? publicDanger(view, tileA) * dangerScale : 0
-    const dangerB = style === 'steady' ? publicDanger(view, tileB) * dangerScale : 0
+    const dangerA = style === 'steady' || style === 'turtle' ? publicDanger(view, tileA) * dangerScale : 0
+    const dangerB = style === 'steady' || style === 'turtle' ? publicDanger(view, tileB) * dangerScale : 0
     const scoreA = structureScore(afterA, style) + opportunityScore(afterA, visible, style, view.self.dingque) - dangerA
     const scoreB = structureScore(afterB, style) + opportunityScore(afterB, visible, style, view.self.dingque) - dangerB
     return scoreB - scoreA || compareTiles(tileA, tileB) || tileA.id.localeCompare(tileB.id)
@@ -363,7 +375,8 @@ function chooseResponse(state: GameState, playerId: PlayerId, legal: LegalAction
     const before = structureScore(player.hand, style)
     const after = structureScore(player.hand.filter(tile => !ids.has(tile.id)), style)
     const meldGain = style === 'efficient' ? 6 : 4
-    if (after + meldGain >= before + (style === 'steady' ? 2 : 0))
+    const caution = style === 'steady' ? 2 : style === 'turtle' ? 6 : 0
+    if (after + meldGain >= before + caution)
       return peng
   }
   return legal.find(action => action.type === 'pass')!
@@ -416,8 +429,14 @@ export function getAIReason(state: GameState, playerId: PlayerId, command: GameC
       const base = `打出 ${tile.type}${tile.value} 后手牌机会数 ${total}（${rating}）`
       if (style === 'steady')
         return `${base}，兼顾公开信息中的出牌风险。`
+      if (style === 'turtle')
+        return `${base}，对手一有副露就优先找熟张，宁可放慢速度也不轻易冒险。`
       if (style === 'aggressive')
         return `${base}，保留成组、对子与做大牌潜力。`
+      if (style === 'qingyise')
+        return `${base}，优先把牌张集中到一门，哪怕会牺牲一部分即时牌效。`
+      if (style === 'pengManiac')
+        return `${base}，偏好保留自摸与杠后补张空间，只有结构站得住才会积极开杠。`
       return `${base}，优先保留有效进张。`
     }
   }

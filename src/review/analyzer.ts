@@ -5,6 +5,7 @@ import {
   assessDiscardSafety,
   brokenStrongCombos,
   countOpportunities,
+  goldenLineLabel,
 } from '../knowledge/mahjongTheory'
 
 export const REVIEW_ALGORITHM_VERSION = 'zhuyang-opportunity-v1'
@@ -178,7 +179,7 @@ export function buildReport(playerId: PlayerId, decisions: readonly DiscardDecis
         kind: 'tileEfficiency',
         severity,
         title: `这一手把转和的路打窄了：${tileLabel(decision.tile)}`,
-        detail: `${publicSituation(decision)} 你打出 ${tileLabel(decision.tile)} 后，实战只留下 ${decision.opportunityActual} 张可兑现的活张（${waitsLabel(decision.actualWaits)}），${paceLabel(decision.opportunityActual)}；如果改打 ${bestTilesLabel(decision)}，还能保留 ${decision.opportunityBest} 张活张（${waitsLabel(decision.bestWaits)}）。这不是单纯“少几张牌”，而是把原本更容易摸到、也更容易尽快听牌的路线拆窄了。下次先比较各候选打完后留下的叫口和剩余张数，再决定谁该先走。`,
+        detail: `${publicSituation(decision)} 你打出 ${tileLabel(decision.tile)}（${goldenLineLabel(decision.tile)}）后，实战只留下 ${decision.opportunityActual} 张可兑现的活张（${waitsLabel(decision.actualWaits)}），${paceLabel(decision.opportunityActual)}；如果改打 ${bestTilesLabel(decision)}，还能保留 ${decision.opportunityBest} 张活张（${waitsLabel(decision.bestWaits)}）。这不只是少几张牌：还要核对这次是否把同门的金线 1-4-7 / 2-5-8 / 3-6-9 的接口一并切断。下次先比较各候选打完后留下的叫口、剩余张数和金线连接，再决定谁该先走。`,
         sequence: decision.sequence,
       })
     }
