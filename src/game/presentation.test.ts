@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildReport } from '../review/analyzer'
 import { createInitialGame, recommendDingque } from './core'
 import { executeCommand } from './engine'
-import { buildEventTimeline, buildGameReview, buildSettlementSummary, buildTheoryHistoryEntry, formatGameEvent, recommendTraining } from './presentation'
+import { buildEventTimeline, buildGameReview, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, formatAIBehaviorTag, formatGameEvent, recommendTraining } from './presentation'
 
 function transfer(sequence: number, from: 0 | 1 | 2 | 3, to: 0 | 1 | 2 | 3, amount: number, reason: Extract<GameEvent, { type: 'score_transferred' }>['reason']): Extract<GameEvent, { type: 'score_transferred' }> {
   return { sequence, type: 'score_transferred', from, to, amount, reason, sourceEventSequence: sequence }
@@ -35,6 +35,18 @@ describe('结算页投影', () => {
     expect(summary.endReason).toContain('牌墙')
   })
 
+  it('为最后十张专项输出活张与安全退路的逐题结论', () => {
+    const state = createInitialGame(33)
+    state.phase = 'finished'
+    state.endReason = 'wall_empty'
+    const report = buildReport(0, [])
+    const review = buildSpecialTrainingReview(state, 'endgame-count', report)
+
+    expect(review.objective).toContain('公开河牌扣张')
+    expect(review.outcome).toContain('牌墙已尽')
+    expect(review.nextPractice).toContain('哪几张已死')
+  })
+
   it('生成关键事件和完整事件时间线且不修改原事件', () => {
     const state = createInitialGame(11)
     const tile = state.players[0].hand[0]
@@ -56,6 +68,20 @@ describe('结算页投影', () => {
     expect(formatGameEvent(state.events[4])).toBe('抢杠胡成立')
     expect(formatGameEvent(state.events[5])).toContain('三家已胡')
     expect(state.events).toEqual(events)
+  })
+
+  it('依据公开状态输出局势温度与 AI 行为标签', () => {
+    const state = createInitialGame(12)
+    const tile = state.players[1].hand[0]
+    state.players[1].aiStyle = 'efficient'
+    state.events = [{ sequence: 1, type: 'tile_discarded', playerId: 1, tile }]
+
+    expect(buildTableMood(state)).toMatchObject({ stage: '开局塑形', threat: '平稳' })
+    expect(formatAIBehaviorTag(state, state.events[0])).toContain('两面与速度优先')
+
+    state.wall = state.wall.slice(0, 16)
+    state.players[2].melds = [{ kind: 'peng', tiles: [tile, tile, tile], fromPlayer: 1 }]
+    expect(buildTableMood(state)).toMatchObject({ stage: '尾盘决战', threat: '危险' })
   })
 
   it('基于命令检查点生成不使用未来信息的关键决策复盘', () => {

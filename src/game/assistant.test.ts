@@ -1,7 +1,7 @@
 import type { TileType } from '../types'
 import type { GameState, TileInstance } from './types'
 import { describe, expect, it } from 'vitest'
-import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildPengLesson, countKnownCopies } from './assistant'
+import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildImmediateDiscardFeedback, buildPengLesson, countKnownCopies } from './assistant'
 import { createInitialGame, createTileSet, sortTiles } from './core'
 
 function take(pool: TileInstance[], specification: string): TileInstance[] {
@@ -97,6 +97,18 @@ describe('实时出牌助手', () => {
     expect(unready?.tenpaiPaths.length).toBeGreaterThan(0)
     expect(unready?.nextDrawTenpaiProbability).not.toBeNull()
     expect(unready?.tenpaiPaths.reduce((sum, path) => sum + path.remaining, 0)).toBeGreaterThan(0)
+  })
+
+  it('只在实际弃牌明显走窄时给出即时路线反馈', () => {
+    const analysis = buildDiscardAssistant(fixture())
+    const best = analysis.candidates[0]
+    const inferior = analysis.candidates.find(candidate => candidate.opportunity <= best.opportunity - 3)
+    expect(inferior).toBeDefined()
+    expect(buildImmediateDiscardFeedback(analysis, inferior!.tile)).toMatchObject({
+      kind: 'route',
+      message: expect.stringContaining('少留'),
+    })
+    expect(buildImmediateDiscardFeedback(analysis, best.tile)).toBeNull()
   })
 
   it('每巡先给出明确局势目标，并用它约束候选讲解', () => {

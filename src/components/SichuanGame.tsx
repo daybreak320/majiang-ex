@@ -3,16 +3,17 @@ import type { GameState, LegalAction, OpponentConfig, PlayerId, TileInstance } f
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
 import type { DiscardCandidateAnalysis } from '../game/assistant'
-import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildPengLesson } from '../game/assistant'
-import { createInitialGame, createSpecialTrainingGame, getWideBedScenario, getWideTenpaiScenario, recommendDingque, SPECIAL_TRAINING_META } from '../game/core'
+import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildImmediateDiscardFeedback, buildPengLesson } from '../game/assistant'
+import { createInitialGame, createSpecialTrainingGame, getSpecialTrainingScenarioCount, getWideBedScenario, getWideTenpaiScenario, recommendDingque, SPECIAL_TRAINING_META } from '../game/core'
 import type { SpecialTrainingKind } from '../game/core'
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
-import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildTheoryHistoryEntry, formatGameEvent, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
+import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, formatAIBehaviorTag, formatGameEvent, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
 import { buildStrategicReminder, detectOpponentThreats, inferEndgameDefense } from '../game/strategy'
-import { getTurnTimerDuration, shouldAdvanceAI } from '../game/ui'
+import { getAIThinkingProfile, getTurnTimerDuration, shouldAdvanceAI } from '../game/ui'
 import { analyzeGame } from '../review/analyzer'
 import { goldenLineLabel } from '../knowledge/mahjongTheory'
+import { recordSpecialTrainingCompleted } from '../utils/playerProfile'
 import { MajiangTile } from './MajiangTile'
 
 interface SichuanGameProps {
@@ -21,6 +22,7 @@ interface SichuanGameProps {
   timedTraining: boolean
   opponentConfigs?: readonly OpponentConfig[]
   trainingKind?: SpecialTrainingKind
+  trainingScenarioIndex?: number
   onHome: () => void
   onNewGame: () => void
   onStartTraining: (kind: SpecialTrainingKind) => void
@@ -356,13 +358,14 @@ function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedT
   )
 }
 
-function SettlementPage({ state, history, onHome, onNewGame, onStartTraining }: { state: GameState, history: GameHistoryEntry[], onHome: () => void, onNewGame: () => void, onStartTraining: (kind: SpecialTrainingKind) => void }) {
+function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onStartTraining }: { state: GameState, history: GameHistoryEntry[], trainingKind?: SpecialTrainingKind, onHome: () => void, onNewGame: () => void, onStartTraining: (kind: SpecialTrainingKind) => void }) {
   const [showAllEvents, setShowAllEvents] = useState(false)
   const [reviewFeedback, setReviewFeedback] = useState<'认可' | '不认可' | null>(null)
   const [selectedRouteSequence, setSelectedRouteSequence] = useState<number | null>(null)
   const summary = buildSettlementSummary(state)
   const intelligentReview = analyzeGame(state.events, 0)
   const review = buildGameReview(state)
+  const trainingReview = trainingKind === undefined ? null : buildSpecialTrainingReview(state, trainingKind, intelligentReview)
   const insight = buildHistoryInsight(history)
   const trainingRecommendation = recommendTraining(history)
   const timeline = buildEventTimeline(state, showAllEvents)
@@ -502,6 +505,18 @@ function SettlementPage({ state, history, onHome, onNewGame, onStartTraining }: 
               </div>
             )}
       </section>
+      {trainingReview !== null && (
+        <section className="settlement-card special-training-review">
+          <span className="eyebrow">本题复盘 · 专项结论</span>
+          <h3>{SPECIAL_TRAINING_META[trainingKind!].title}</h3>
+          <div className="special-review-grid">
+            <article><strong>本题目标</strong><p>{trainingReview.objective}</p></article>
+            <article><strong>本题结果</strong><p>{trainingReview.outcome}</p></article>
+            <article className="special-review-key"><strong>关键转折</strong><p>{trainingReview.keyPoint}</p></article>
+            <article><strong>下一题怎么练</strong><p>{trainingReview.nextPractice}</p></article>
+          </div>
+        </section>
+      )}
       <section className="settlement-card game-review">
         <span className="eyebrow">智能牌局复盘</span>
         <h3>{review.headline}</h3>
@@ -770,21 +785,24 @@ function SettlementPage({ state, history, onHome, onNewGame, onStartTraining }: 
         </section>
       )}
       <div className="settlement-actions">
-        <button className="primary-action" onClick={onNewGame}>再来一局</button>
+        <button className="primary-action" onClick={() => trainingKind === undefined ? onNewGame() : onStartTraining(trainingKind)}>{trainingKind === undefined ? '再来一局' : '下一题'}</button>
         <button className="secondary-action" onClick={onHome}>返回首页</button>
       </div>
     </main>
   )
 }
 
-export function SichuanGame({ seed, restoredState, timedTraining, opponentConfigs, trainingKind, onHome, onNewGame, onStartTraining }: SichuanGameProps) {
-  const [state, setState] = useState(() => restoredState ?? (trainingKind === undefined ? createInitialGame(seed, opponentConfigs) : createSpecialTrainingGame(seed, trainingKind)))
+export function SichuanGame({ seed, restoredState, timedTraining, opponentConfigs, trainingKind, trainingScenarioIndex, onHome, onNewGame, onStartTraining }: SichuanGameProps) {
+  const [state, setState] = useState(() => restoredState ?? (trainingKind === undefined ? createInitialGame(seed, opponentConfigs) : createSpecialTrainingGame(seed, trainingKind, trainingScenarioIndex, true)))
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
   const [thinking, setThinking] = useState<PlayerId | null>(null)
+  const [thinkingMessage, setThinkingMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [paused, setPaused] = useState(false)
-  const [assistantEnabled, setAssistantEnabled] = useState(false)
+  // 专项训练默认开启导师，实战模式仍由玩家自行决定是否打开。
+  const [assistantEnabled, setAssistantEnabled] = useState(() => trainingKind !== undefined)
+  const [immediateFeedback, setImmediateFeedback] = useState<string | null>(null)
   const [skipToResult, setSkipToResult] = useState(false)
   const stateRef = useRef(state)
   const scheduleToken = useRef(0)
@@ -798,10 +816,15 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   const discardIds = new Set(discardActions.map(action => action.tileId))
   const otherActions = legal.filter((action): action is Exclude<LegalAction, { type: 'discard' | 'dingque' }> => action.type !== 'discard' && action.type !== 'dingque')
   const recommended = recommendDingque(state.players[0].hand)
-  const wideBedScenario = trainingKind === 'attack-qingyise' ? getWideBedScenario(seed) : null
-  const wideTenpaiTraining = trainingKind === 'endgame-qingyise-tenpai' ? getWideTenpaiScenario(seed) : null
+  const wideBedScenario = trainingKind === 'attack-qingyise' ? getWideBedScenario(trainingScenarioIndex ?? seed) : null
+  const wideTenpaiTraining = trainingKind === 'endgame-qingyise-tenpai' ? getWideTenpaiScenario(trainingScenarioIndex ?? seed) : null
+  const trainingScenarioNumber = trainingKind === undefined ? null : (trainingScenarioIndex ?? Math.abs(seed) % getSpecialTrainingScenarioCount(trainingKind)) + 1
+  const trainingScenarioCount = trainingKind === undefined ? null : getSpecialTrainingScenarioCount(trainingKind)
   const jingoudiaoTraining = trainingKind === 'attack-jingoudiao'
   const playerHasLeftTable = state.players[0].hasWon
+  const tableMood = useMemo(() => buildTableMood(state), [state])
+  const latestEvent = state.events[state.events.length - 1]
+  const aiBehaviorTag = useMemo(() => formatAIBehaviorTag(state, latestEvent), [state, latestEvent])
 
   const submit = (action: LegalAction) => {
     if (pausedRef.current)
@@ -810,6 +833,12 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     const stillLegal = getLegalActions(current, 0).some(candidate => JSON.stringify(candidate) === JSON.stringify(action))
     if (!stillLegal)
       return
+    const feedback = action.type === 'discard'
+      ? (() => {
+          const tile = current.players[0].hand.find(candidate => candidate.id === action.tileId)
+          return tile === undefined ? null : buildImmediateDiscardFeedback(buildDiscardAssistant(current), tile)
+        })()
+      : null
     const result = executeCommand(current, { ...action, playerId: 0 })
     if (!result.ok) {
       setError(result.error)
@@ -817,6 +846,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     }
     scheduleToken.current++
     setError(null)
+    setImmediateFeedback(feedback?.message ?? null)
     setSelectedTileId(null)
     stateRef.current = result.nextState
     setState(result.nextState)
@@ -922,7 +952,9 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     if (preview.command === null || preview.command.playerId === 0)
       return
     const token = ++scheduleToken.current
+    const thinkingProfile = getAIThinkingProfile(state, preview.command)
     setThinking(preview.command.playerId)
+    setThinkingMessage(thinkingProfile.message)
     const timeout = window.setTimeout(() => {
       if (token !== scheduleToken.current || stateRef.current !== state)
         return
@@ -935,12 +967,15 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
       setState(advanced.state)
       saveUnfinishedGame(advanced.state, { timedTraining })
       setThinking(null)
+      setThinkingMessage(null)
       setSelectedTileId(null)
-    }, 350 + Math.abs(state.nextEventSequence * 73 + seed) % 301)
+    }, thinkingProfile.delay)
     return () => {
       window.clearTimeout(timeout)
-      if (token === scheduleToken.current)
+      if (token === scheduleToken.current) {
         setThinking(null)
+        setThinkingMessage(null)
+      }
     }
   }, [paused, seed, skipToResult, state])
 
@@ -948,10 +983,12 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     if (historyRef.current === null) {
       const entry = buildTheoryHistoryEntry(state, analyzeGame(state.events, 0))
       recordFinishedGame(entry)
+      if (trainingKind !== undefined)
+        recordSpecialTrainingCompleted(`专项 · ${SPECIAL_TRAINING_META[trainingKind].title}`)
       historyRef.current = [entry, ...loadGameHistory()]
     }
     clearUnfinishedGame()
-    return <SettlementPage state={state} history={historyRef.current} onHome={onHome} onNewGame={onNewGame} onStartTraining={onStartTraining} />
+    return <SettlementPage state={state} history={historyRef.current} trainingKind={trainingKind} onHome={onHome} onNewGame={onNewGame} onStartTraining={onStartTraining} />
   }
 
   const leaveGame = () => {
@@ -984,7 +1021,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
               checked={assistantEnabled}
               onChange={event => setAssistantEnabled(event.target.checked)}
             />
-            <span>出牌助手</span>
+            <span>{trainingKind === undefined ? '出牌助手' : 'AI 导师'}</span>
           </label>
           {paused && <span className="turn-timer">已暂停</span>}
           {timedTraining && !paused && remainingSeconds !== null && (
@@ -1004,6 +1041,9 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
           <button className="secondary-action compact" onClick={leaveGame}>返回首页</button>
         </div>
       </header>
+      {trainingKind !== undefined && trainingScenarioNumber !== null && trainingScenarioCount !== null && (
+        <div className="training-scenario-progress" aria-label="专项训练题组进度">本专项题组 {trainingScenarioNumber} / {trainingScenarioCount}</div>
+      )}
       {wideTenpaiTraining !== null && (
         <section className="strategic-reminder wide-bed-briefing qingyise-tenpai-briefing">
           <div>
@@ -1068,7 +1108,14 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
             <small>张</small>
           </div>
           <p>{state.phase === 'dingque' ? '定缺阶段' : state.phase === 'responding' ? '响应阶段' : `${PLAYER_NAMES[state.currentPlayer]}行动`}</p>
-          <div className="latest-event">{formatGameEvent(state.events[state.events.length - 1])}</div>
+          <div className={`table-mood mood-${tableMood.threat}`}>
+            <b>{tableMood.stage} · {tableMood.threat}</b>
+            <span>{tableMood.message}</span>
+          </div>
+          <div className="latest-event">{formatGameEvent(latestEvent)}</div>
+          {thinkingMessage !== null && <div className="ai-thinking-status">{thinkingMessage}</div>}
+          {immediateFeedback !== null && <div className="immediate-discard-feedback">{immediateFeedback}</div>}
+          {aiBehaviorTag !== null && <div className="ai-behavior-tag">{aiBehaviorTag}</div>}
         </section>
         <SouthPlayerPanel
           state={state}
@@ -1083,7 +1130,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
         />
         </div>
             <div className="game-column game-right">
-              {assistantEnabled && <AssistantPanel state={state} selectedTileId={selectedTileId} />}
+              {(trainingKind !== undefined || assistantEnabled) && <AssistantPanel state={state} selectedTileId={selectedTileId} />}
             </div>
           </div>
         )

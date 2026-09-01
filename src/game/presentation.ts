@@ -70,6 +70,52 @@ function tileLabel(tile: { type: string, value: number }): string {
   return `${tile.value}${tile.type}`
 }
 
+export interface TableMood {
+  stage: '开局塑形' | '中盘比速' | '尾盘决战'
+  threat: '平稳' | '警觉' | '危险'
+  message: string
+}
+
+export function buildTableMood(state: GameState): TableMood {
+  const exposedOpponents = state.players.slice(1).filter(player => player.melds.length > 0 && !player.hasWon)
+  const nearEndgame = state.wall.length <= 16
+  if (nearEndgame)
+    return { stage: '尾盘决战', threat: exposedOpponents.length > 0 ? '危险' : '警觉', message: exposedOpponents.length > 0 ? '牌墙见底且有人副露：先守住安全退路。' : '牌墙见底：每张牌都要兼顾听牌与安全。' }
+  if (exposedOpponents.length >= 2)
+    return { stage: '中盘比速', threat: '危险', message: '两家以上副露：速度已经拉满，别把危险牌送出去。' }
+  if (exposedOpponents.length === 1)
+    return { stage: '中盘比速', threat: '警觉', message: '有人副露推进：比较牌效时，把安全退路一起算。' }
+  if (state.wall.length <= 45)
+    return { stage: '中盘比速', threat: '平稳', message: '牌效开始分胜负：优先看有效进张与下叫速度。' }
+  return { stage: '开局塑形', threat: '平稳', message: '先清缺、理搭子，别急着为大牌牺牲速度。' }
+}
+
+export function formatAIBehaviorTag(state: GameState, event: GameEvent | undefined): string | null {
+  if (event === undefined || !('playerId' in event) || event.playerId === 0)
+    return null
+  const player = state.players[event.playerId]
+  const name = player.displayName?.trim() || PLAYER_NAMES[event.playerId]
+  const style = player.aiStyle
+  if (event.type === 'meld_declared') {
+    if (event.meld.kind === 'peng')
+      return `【${name}】鸣牌提速，公开推进。`
+    if (event.meld.kind === 'mingGang' || event.meld.kind === 'buGang')
+      return `【${name}】${event.meld.kind === 'mingGang' ? '明杠' : '补杠'}后补张，局势加速。`
+    return `【${name}】暗杠蓄力，牌面仍有悬念。`
+  }
+  if (event.type === 'response_chosen' && event.choice.type === 'pass')
+    return `【${name}】选择不过度鸣牌，保留手牌弹性。`
+  if (event.type === 'tile_discarded') {
+    if (style === 'aggressive') return `【${name}】继续施压，牌路偏向进攻。`
+    if (style === 'efficient') return `【${name}】两面与速度优先，抢先下叫。`
+    if (style === 'steady') return `【${name}】稳住牌效，也在看公开牌河。`
+    if (style === 'qingyise') return `【${name}】同门执念未退，仍在为做大牌铺路。`
+    if (style === 'turtle') return `【${name}】局势收紧，优先给自己留退路。`
+    if (style === 'pengManiac') return `【${name}】保留杠后路线，等能加速的机会。`
+  }
+  return null
+}
+
 export function formatGameEvent(event: GameEvent | undefined): string {
   if (event === undefined)
     return '牌局已就绪，请先完成定缺'
@@ -221,6 +267,57 @@ export function buildGameReview(finalState: GameState): GameReview {
       ? '你的关键选择与当前牌效策略一致。'
       : '建议优先关注定缺结构、出牌后的有效连接以及鸣牌收益。',
     decisions: fallback,
+  }
+}
+
+export interface SpecialTrainingReview {
+  objective: string
+  outcome: string
+  keyPoint: string
+  nextPractice: string
+}
+
+/** 专项结算不只给胜负：把整局中的实际决策压缩成下一次可执行的训练结论。 */
+export function buildSpecialTrainingReview(state: GameState, kind: SpecialTrainingKind, report: ReviewReport): SpecialTrainingReview {
+  const self = state.players[0]
+  const mistakes = report.decisions
+    .filter(decision => decision.evaluable && decision.opportunityLoss > 0)
+    .sort((a, b) => b.opportunityLoss - a.opportunityLoss)
+  const best = mistakes[0]
+  const won = self.hasWon
+  const outcome = won
+    ? `本题已胡牌${self.winInfo === null ? '' : ` · ${self.winInfo.fan}番`}。`
+    : state.endReason === 'wall_empty'
+      ? '牌墙已尽，本题以终局结算结束。'
+      : '本题结束，回看关键决策而不只看最终输赢。'
+
+  if (kind === 'endgame-count') {
+    return {
+      objective: '最后十张：按公开河牌扣张，同时比较活张、叫口与安全退路。',
+      outcome,
+      keyPoint: best === undefined
+        ? '本题没有出现明显的牌效走窄；尾盘仍应逐张核对公开扣张，别把“看起来能听”当成活叫。'
+        : `关键转折在 #${best.sequence}：实际打 ${tileLabel(best.tile)} 后只留 ${best.opportunityActual} 张有效进张；改打 ${best.bestTiles.slice(0, 2).map(tileLabel).join('、')} 可留 ${best.opportunityBest} 张。`,
+      nextPractice: best === undefined
+        ? '下一题先报出：哪几张已死、哪几张还活，再决定是否追听。'
+        : `下一题先列出 ${best.actualWaits.slice(0, 4).map(wait => `${tileLabel(wait.tile)}×${wait.remaining}`).join('、') || '实际活张'}，再和最优方案的 ${best.bestWaits.slice(0, 4).map(wait => `${tileLabel(wait.tile)}×${wait.remaining}`).join('、') || '活张'} 对比。`,
+    }
+  }
+
+  const objectives: Record<Exclude<SpecialTrainingKind, 'endgame-count'>, string> = {
+    'attack-qingyise': '宽床决策：在清一色收益、普通自摸速度与转和退路之间取舍。',
+    'attack-jingoudiao': '金钩钓换听：四副碰牌后，按真实余张选择更活的单吊。',
+    'defense-big-hands': '三家做大：识别公开副露后降速，不给对手喂关键牌。',
+    'defense-race-qingyise': '同门竞速：比较自己速度与对手公开推进，决定抢跑或转防。',
+    'endgame-qingyise-tenpai': '下宽叫：同样能下叫时，优先选择真正活张更多的听口。',
+  }
+  return {
+    objective: objectives[kind],
+    outcome,
+    keyPoint: best === undefined
+      ? '本题没有检测到明显的有效进张损失；继续把公开牌河和对手副露纳入判断。'
+      : `关键转折在 #${best.sequence}：打 ${tileLabel(best.tile)} 少留 ${best.opportunityLoss} 张有效进张；推荐 ${best.bestTiles.slice(0, 2).map(tileLabel).join('、')}。`,
+    nextPractice: best === undefined ? '下一题继续先看牌河，再决定速度与安全的优先级。' : `下一题遇到类似结构，先比较“打后活张”而不是只看手牌是否整齐。`,
   }
 }
 

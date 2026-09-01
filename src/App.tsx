@@ -5,8 +5,8 @@ import { ParticleBackground } from './components/ParticleBackground'
 import { SichuanGame } from './components/SichuanGame'
 import { APP_VERSION } from './config/release'
 import { loadUnfinishedGame } from './game/persistence'
-import { loadPlayerTrainingProfile, recordTrainingStart, savePlayerId } from './utils/playerProfile'
-import { SPECIAL_TRAINING_META } from './game/core'
+import { loadPlayerTrainingProfile, recordTrainingStart, savePlayerId, takeNextSpecialTrainingIndex } from './utils/playerProfile'
+import { getSpecialTrainingScenarioCount, SPECIAL_TRAINING_META } from './game/core'
 import type { SpecialTrainingKind } from './game/core'
 
 type Page = 'home' | 'game'
@@ -33,6 +33,15 @@ const OPPONENT_STYLE_OPTIONS: readonly { style: AIStyle, label: string, name: st
   { style: 'pengManiac', label: '自摸杠开狂热爱好者', name: '上碰下自摸', description: '偏爱自摸与杠后补张；只有杠后仍保住结构时才会积极开杠。' },
 ]
 
+const AI_STYLE_AVATARS: Record<AIStyle, string> = {
+  aggressive: '🐯',
+  steady: '🐢',
+  efficient: '🦊',
+  qingyise: '🦚',
+  turtle: '🦥',
+  pengManiac: '🦦',
+}
+
 const DEFAULT_OPPONENTS: readonly OpponentConfig[] = [
   { name: '搞死搞残做大做强', aiStyle: 'aggressive' },
   { name: '先赢是纸', aiStyle: 'efficient' },
@@ -45,10 +54,16 @@ function App() {
   const [savedGame, setSavedGame] = useState<GameState | null>(null)
   const [timedTraining, setTimedTraining] = useState(false)
   const [trainingKind, setTrainingKind] = useState<SpecialTrainingKind | null>(null)
+  const [trainingScenarioIndex, setTrainingScenarioIndex] = useState<number | null>(null)
+  const [specialTrainingRounds, setSpecialTrainingRounds] = useState<Partial<Record<SpecialTrainingKind, number>>>({})
   const [opponents, setOpponents] = useState<OpponentConfig[]>(() => DEFAULT_OPPONENTS.map(opponent => ({ ...opponent })))
   const [ignoreSavedGame, setIgnoreSavedGame] = useState(false)
   const [playerId, setPlayerId] = useState(() => loadPlayerTrainingProfile()?.playerId ?? '')
   const [playerIdDraft, setPlayerIdDraft] = useState(() => loadPlayerTrainingProfile()?.playerId ?? '')
+  const trainingProfile = loadPlayerTrainingProfile()
+  const specialCompletion = trainingProfile?.specialTrainingCompleted ?? {}
+  const recommendedTraining = (Object.keys(SPECIAL_TRAINING_META) as SpecialTrainingKind[])
+    .sort((left, right) => (specialCompletion[`专项 · ${SPECIAL_TRAINING_META[left].title}`] ?? 0) - (specialCompletion[`专项 · ${SPECIAL_TRAINING_META[right].title}`] ?? 0))[0]
 
   useEffect(() => {
     if (ignoreSavedGame)
@@ -66,6 +81,7 @@ function App() {
     setIgnoreSavedGame(true)
     setSavedGame(null)
     setTrainingKind(null)
+    setTrainingScenarioIndex(null)
     setSeed(nextSeed())
     setPage('game')
   }
@@ -82,11 +98,19 @@ function App() {
   const startSpecialTraining = (kind: SpecialTrainingKind) => {
     if (!playerId)
       return
-    recordTrainingStart(`专项 · ${SPECIAL_TRAINING_META[kind].title}`)
+    const scenarioCount = getSpecialTrainingScenarioCount(kind)
+    const trainingLabel = `专项 · ${SPECIAL_TRAINING_META[kind].title}`
+    const nextRound = (specialTrainingRounds[kind] ?? -1) + 1
+    // 每个专项都从玩家自己的题库游标领取，刷新页面或回首页也不会重新回到第一题。
+    const scenarioIndex = takeNextSpecialTrainingIndex(trainingLabel, scenarioCount) ?? nextRound % scenarioCount
+    const scenarioSeed = nextSeed()
+    recordTrainingStart(trainingLabel)
+    setSpecialTrainingRounds(current => ({ ...current, [kind]: nextRound }))
     setIgnoreSavedGame(true)
     setSavedGame(null)
     setTrainingKind(kind)
-    setSeed(nextSeed())
+    setTrainingScenarioIndex(scenarioIndex)
+    setSeed(scenarioSeed)
     setPage('game')
   }
 
@@ -106,7 +130,7 @@ function App() {
   }
 
   if (page === 'game')
-    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} opponentConfigs={savedGame === null ? opponents : undefined} trainingKind={savedGame === null ? trainingKind ?? undefined : undefined} onHome={() => setPage('home')} onNewGame={startGame} onStartTraining={startSpecialTraining} />
+    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} opponentConfigs={savedGame === null ? opponents : undefined} trainingKind={savedGame === null ? trainingKind ?? undefined : undefined} trainingScenarioIndex={savedGame === null ? trainingScenarioIndex ?? undefined : undefined} onHome={() => setPage('home')} onNewGame={startGame} onStartTraining={startSpecialTraining} />
 
   return (
     <div className="home-page min-h-screen w-full relative">
@@ -132,11 +156,10 @@ function App() {
             <p>成都血战到底</p>
           </div>
           <div className="battle-visual" aria-label="四人牌桌，可直接选择三名 AI 对手">
-            <strong>血战到底</strong>
             {opponents.map((opponent, index) => (
               <details className={`opponent-seat-picker opponent-seat-${index}`} key={index}>
-                <summary>
-                  <small>{['上家', '对家', '下家'][index]}</small>
+                <summary aria-label={`选择对手：${opponent.name}`}>
+                  <span className={`opponent-avatar opponent-avatar-${index}`} aria-hidden="true">{AI_STYLE_AVATARS[opponent.aiStyle]}</span>
                   <b>{opponent.name}</b>
                 </summary>
                 <div className="opponent-seat-options">
@@ -147,7 +170,7 @@ function App() {
               </details>
             ))}
             <span className="player-id-seat">
-              <small>你</small>
+              <span className="player-avatar" aria-hidden="true">🐼</span>
               <div>
                 <input
                   aria-label="玩家名字 ID"
@@ -185,6 +208,20 @@ function App() {
           </div>
           <MajiangHand />
         </section>
+        {trainingProfile !== null && (
+          <section className="training-profile-card" aria-label="你的专项训练档案">
+            <div>
+              <span className="eyebrow">你的训练档案</span>
+              <h2>{trainingProfile.playerId}，下一项建议练「{SPECIAL_TRAINING_META[recommendedTraining].title}」</h2>
+              <p>优先补齐练得最少的专项；完成专项后会自动计入这里。</p>
+            </div>
+            <div className="training-profile-stats">
+              <strong>{Object.values(specialCompletion).reduce<number>((total, count) => total + (count ?? 0), 0)}</strong>
+              <span>完成专项局</span>
+              <button className="primary-action compact" onClick={() => startSpecialTraining(recommendedTraining)}>开始建议专项</button>
+            </div>
+          </section>
+        )}
         <section className="scenario-training-section" aria-labelledby="scenario-training-title">
           <div className="section-heading">
             <span className="eyebrow">专项训练</span>
@@ -193,9 +230,10 @@ function App() {
           </div>
           <div className="scenario-training-grid">
             {(Object.keys(SPECIAL_TRAINING_META) as SpecialTrainingKind[]).map((kind) => {
+              const isEndgame = kind === 'attack-jingoudiao' || kind === 'endgame-count' || kind === 'endgame-qingyise-tenpai'
               const visual = SPECIAL_TRAINING_VISUALS[kind]
               return (
-                <button className={`scenario-training-card scenario-${kind}`} key={kind} onClick={() => startSpecialTraining(kind)}>
+                <button className={`scenario-training-card scenario-${kind} ${isEndgame ? 'scenario-endgame-card' : ''}`} key={kind} onClick={() => startSpecialTraining(kind)}>
                   <span className={`scenario-training-icon bg-gradient-to-br ${visual.color}`} aria-hidden="true">{visual.icon}</span>
                   <span className="scenario-training-category">{visual.category}</span>
                   <h3>{SPECIAL_TRAINING_META[kind].title}</h3>

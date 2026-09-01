@@ -148,6 +148,12 @@ export interface DiscardAssistantAnalysis {
   coach: CoachMessage
 }
 
+/** 玩家落子后的一句即时复盘：仅比较该回合候选与公开副露，不读取未来事件或对手暗牌。 */
+export interface ImmediateDiscardFeedback {
+  kind: 'route' | 'risk' | 'value'
+  message: string
+}
+
 const OPPORTUNITY_RATING_LABEL: Record<ReturnType<typeof rateOpportunity>, string> = {
   poor: '较少',
   fair: '一般',
@@ -489,6 +495,29 @@ function buildCoachMessage(state: GameState, chosen: DiscardCandidateAnalysis | 
  * 番数只计算已经成牌的基础番与基础分；海底、杠上花等情境番不提前虚构。
  * 来源：理论册第一、二节及成都册第二章第一节的机会数计算方法。
  */
+export function buildImmediateDiscardFeedback(analysis: DiscardAssistantAnalysis, tile: Tile): ImmediateDiscardFeedback | null {
+  const actual = analysis.candidates.find(candidate => sameTile(candidate.tile, tile))
+  const best = analysis.candidates[0]
+  if (actual === undefined || best === undefined || sameTile(actual.tile, best.tile))
+    return null
+
+  const opportunityLoss = best.opportunity - actual.opportunity
+  const bestTile = `${best.tile.value}${best.tile.type}`
+  const actualTile = `${actual.tile.value}${actual.tile.type}`
+  const threat = analysis.coach.mode === 'warning' && analysis.coach.headline.includes('睡宽床')
+  if (threat && actual.trendAdjustment <= -0.15 && best.trendAdjustment > actual.trendAdjustment) {
+    return { kind: 'risk', message: `这手打 ${actualTile} 踩进公开危险门；改打 ${bestTile} 可先避开喂牌压力。` }
+  }
+  if (opportunityLoss >= 3) {
+    return { kind: 'route', message: `这手打 ${actualTile} 少留 ${opportunityLoss} 张有效进张；当时打 ${bestTile} 的进张路更宽。` }
+  }
+  const brokeStrongRoute = actual.brokenCombos.length > best.brokenCombos.length
+  if (brokeStrongRoute && best.opportunity >= actual.opportunity) {
+    return { kind: 'value', message: `这手为做牌拆开了强组合，但没有换到更快下叫；${bestTile} 的结构更稳。` }
+  }
+  return null
+}
+
 export function buildDiscardAssistant(state: GameState, playerId: PlayerId = 0): DiscardAssistantAnalysis {
   const player = state.players[playerId]
   const visible = publicTiles(state)

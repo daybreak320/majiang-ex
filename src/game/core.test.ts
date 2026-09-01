@@ -9,6 +9,9 @@ import {
   createSpecialTrainingGame,
   createSeededRandom,
   getWideBedScenario,
+  getSpecialTrainingScenarioCount,
+  getEndgameCountLibrarySeed,
+  getJingoudiaoLibrarySeed,
   createTileSet,
   getLegalDiscards,
   recommendDingque,
@@ -79,34 +82,102 @@ describe('牌组与开局', () => {
     expect(createSpecialTrainingGame(88, 'attack-qingyise')).toEqual(createSpecialTrainingGame(88, 'attack-qingyise'))
   })
 
-  it('下宽叫专项轮换清一色与杠开残局，首巡均可比较不同宽度的叫口', () => {
-    const qingyise = createSpecialTrainingGame(960, 'endgame-qingyise-tenpai')
-    expect(qingyise.wall).toHaveLength(10)
-    expect(qingyise.players[0].hand).toHaveLength(14)
-    expect(qingyise.players[0].hand.every(tile => tile.type === '万')).toBe(true)
-    expect(qingyise.players[0].dingque).not.toBe('万')
-    const qingyiseCandidates = buildDiscardAssistant(qingyise, 0).candidates
-    expect(qingyiseCandidates.some(candidate => candidate.nextDrawWinProbability !== null)).toBe(true)
-    expect(new Set(qingyiseCandidates.filter(candidate => candidate.nextDrawWinProbability !== null).map(candidate => candidate.opportunity)).size).toBeGreaterThan(1)
-
-    const kongDraw = createSpecialTrainingGame(961, 'endgame-qingyise-tenpai')
-    expect(kongDraw.wall).toHaveLength(10)
-    expect(kongDraw.players[0].melds).toHaveLength(4)
-    expect(kongDraw.players[0].melds.every(meld => meld.kind === 'anGang')).toBe(true)
-    expect(kongDraw.players[0].hand).toHaveLength(2)
-    expect(buildDiscardAssistant(kongDraw, 0).candidates).toHaveLength(2)
-    expect(createSpecialTrainingGame(960, 'endgame-qingyise-tenpai')).toEqual(qingyise)
+  it('专项公开足量题组：下宽叫100局、最后十张500局', () => {
+    expect(getSpecialTrainingScenarioCount('attack-qingyise')).toBe(6)
+    expect(getSpecialTrainingScenarioCount('attack-jingoudiao')).toBe(100)
+    expect(getSpecialTrainingScenarioCount('endgame-qingyise-tenpai')).toBe(100)
+    expect(getSpecialTrainingScenarioCount('endgame-count')).toBe(500)
+    for (const kind of ['defense-big-hands', 'defense-race-qingyise'] as const)
+      expect(getSpecialTrainingScenarioCount(kind)).toBe(3)
   })
 
-  it('金钩钓残局固定四副碰牌与两张候选，每次只需比较留哪张单吊', () => {
-    const game = createSpecialTrainingGame(554512056, 'attack-jingoudiao')
-    expect(game.players[0].melds).toHaveLength(4)
-    expect(game.players[0].melds.every(meld => meld.kind === 'peng')).toBe(true)
-    expect(game.players[0].hand).toHaveLength(2)
-    expect(getLegalActions(game, 0).filter(action => action.type === 'discard')).toHaveLength(2)
-    const candidates = buildDiscardAssistant(game, 0).candidates
-    expect(candidates).toHaveLength(2)
-    expect(new Set(candidates.map(candidate => candidate.opportunity)).size).toBeGreaterThan(1)
+  it('清一色听牌题库按编号提供100个独立残局，且每题都保留十张牌墙', () => {
+    const count = getSpecialTrainingScenarioCount('endgame-qingyise-tenpai')
+    const signatures = Array.from({ length: count }, (_, index) => {
+      const game = createSpecialTrainingGame(20260901, 'endgame-qingyise-tenpai', index)
+      const ids = [...game.wall, ...game.players.flatMap(player => [...player.hand, ...player.discards, ...player.melds.flatMap(meld => meld.tiles)])].map(tile => tile.id)
+      expect(game.wall).toHaveLength(10)
+      expect(ids).toHaveLength(108)
+      expect(new Set(ids)).toHaveLength(108)
+      expect(getLegalActions(game, 0).filter(action => action.type === 'discard').length).toBeGreaterThan(0)
+      return `${game.players[0].hand.map(tile => `${tile.value}${tile.type}`).join(',')}|${game.players.slice(1).flatMap(player => player.discards).map(tile => `${tile.value}${tile.type}`).join(',')}|${game.wall.map(tile => `${tile.value}${tile.type}`).join(',')}`
+    })
+    expect(new Set(signatures)).toHaveLength(count)
+  })
+
+  it('500局残局仓库的编号与种子一一对应，首批题面均不重复', () => {
+    const seeds = Array.from({ length: 500 }, (_, index) => getEndgameCountLibrarySeed(index))
+    expect(new Set(seeds)).toHaveLength(500)
+    const signatures = Array.from({ length: 500 }, (_, index) => {
+      const game = createSpecialTrainingGame(1, 'endgame-count', index, true)
+      const ids = [...game.wall, ...game.players.flatMap(player => [...player.hand, ...player.discards, ...player.melds.flatMap(meld => meld.tiles)])].map(tile => tile.id)
+      expect(game.wall).toHaveLength(10)
+      expect(ids).toHaveLength(108)
+      expect(new Set(ids)).toHaveLength(108)
+      expect(getLegalActions(game, 0).filter(action => action.type === 'discard').length).toBeGreaterThan(0)
+      return [
+        game.players[0].hand.map(tile => `${tile.value}${tile.type}`).join(','),
+        ...game.players.slice(1).map(player => player.discards.map(tile => `${tile.value}${tile.type}`).join(',')),
+        game.wall.map(tile => `${tile.value}${tile.type}`).join(','),
+      ].join('|')
+    })
+    expect(new Set(signatures)).toHaveLength(500)
+  })
+
+  it('最后十张专项按题库编号生成新残局，而非给固定模板换花色', () => {
+    const first = createSpecialTrainingGame(20260901, 'endgame-count', 0, true)
+    const second = createSpecialTrainingGame(20260902, 'endgame-count', 1, true)
+    expect(first.players[0].hand.map(tile => `${tile.value}${tile.type}`)).not.toEqual(second.players[0].hand.map(tile => `${tile.value}${tile.type}`))
+    expect(first.players.slice(1).flatMap(player => player.discards).map(tile => `${tile.value}${tile.type}`)).not.toEqual(second.players.slice(1).flatMap(player => player.discards).map(tile => `${tile.value}${tile.type}`))
+    for (const game of [first, second]) {
+      const ids = [...game.wall, ...game.players.flatMap(player => [...player.hand, ...player.discards, ...player.melds.flatMap(meld => meld.tiles)])].map(tile => tile.id)
+      expect(game.wall).toHaveLength(10)
+      expect(game.players.slice(1).flatMap(player => player.discards)).toHaveLength(45)
+      expect(ids).toHaveLength(108)
+      expect(new Set(ids)).toHaveLength(108)
+      expect(getLegalActions(game, 0).filter(action => action.type === 'discard').length).toBeGreaterThan(0)
+    }
+  })
+
+  it('显式题组编号优先于随机 seed，确保入口题号与实际题面一致', () => {
+    const first = createSpecialTrainingGame(998877, 'endgame-qingyise-tenpai', 0)
+    const second = createSpecialTrainingGame(998877, 'endgame-qingyise-tenpai', 1)
+    expect(first).not.toEqual(second)
+    expect(createSpecialTrainingGame(998877, 'endgame-qingyise-tenpai', 0)).toEqual(first)
+    expect(first.players[0].hand).toHaveLength(14)
+    expect(first.wall).toHaveLength(10)
+  })
+
+  it('下宽叫专项的首巡保留两门实战手牌与十张残局信息', () => {
+    const game = createSpecialTrainingGame(960, 'endgame-qingyise-tenpai', 18)
+    expect(game.wall).toHaveLength(10)
+    expect(game.players[0].hand).toHaveLength(14)
+    expect(new Set(game.players[0].hand.map(tile => tile.type)).size).toBe(2)
+    expect(game.players[0].dingque).not.toBeNull()
+    expect(buildDiscardAssistant(game, 0).candidates.length).toBeGreaterThan(1)
+  })
+
+  it('金钩钓百局题库保留四副碰、两张候选、十张残局墙且题面不重复', () => {
+    const count = getSpecialTrainingScenarioCount('attack-jingoudiao')
+    expect(new Set(Array.from({ length: count }, (_, index) => getJingoudiaoLibrarySeed(index)))).toHaveLength(count)
+    const signatures = Array.from({ length: count }, (_, index) => {
+      const game = createSpecialTrainingGame(554512056, 'attack-jingoudiao', index)
+      const ids = [...game.wall, ...game.players.flatMap(player => [...player.hand, ...player.discards, ...player.melds.flatMap(meld => meld.tiles)])].map(tile => tile.id)
+      expect(game.wall).toHaveLength(10)
+      expect(game.players[0].melds).toHaveLength(4)
+      expect(game.players[0].melds.every(meld => meld.kind === 'peng')).toBe(true)
+      expect(game.players[0].hand).toHaveLength(2)
+      expect(ids).toHaveLength(108)
+      expect(new Set(ids)).toHaveLength(108)
+      expect(getLegalActions(game, 0).filter(action => action.type === 'discard')).toHaveLength(2)
+      return [
+        game.players[0].melds.flatMap(meld => meld.tiles).map(tile => `${tile.value}${tile.type}`).join(','),
+        game.players[0].hand.map(tile => `${tile.value}${tile.type}`).join(','),
+        ...game.players.slice(1).map(player => player.discards.map(tile => `${tile.value}${tile.type}`).join(',')),
+        game.wall.map(tile => `${tile.value}${tile.type}`).join(','),
+      ].join('|')
+    })
+    expect(new Set(signatures)).toHaveLength(count)
   })
 
   it('宽床四类分支从三家对手缺万的起手局开始，且不允许开局直接自摸胡', () => {
@@ -114,7 +185,10 @@ describe('牌组与开局', () => {
     expect(getWideBedScenario(1).route).toBe('七对自摸')
     expect(getWideBedScenario(2).route).toBe('普通自摸')
     expect(getWideBedScenario(3).route).toBe('素胡走人')
-    for (const seed of [0, 1, 2, 3]) {
+    expect(getWideBedScenario(4).route).toBe('清一色')
+    expect(getWideBedScenario(5).route).toBe('普通自摸')
+    expect(new Set([0, 1, 2, 3, 4, 5].map(seed => getWideBedScenario(seed).id))).toHaveLength(6)
+    for (const seed of [0, 1, 2, 3, 4, 5]) {
       const game = createSpecialTrainingGame(seed, 'attack-qingyise')
       const hu = getLegalActions(game, 0).find(action => action.type === 'hu')
       expect(hu, `宽床分支 ${seed} 不应起手天胡`).toBeUndefined()
@@ -123,7 +197,7 @@ describe('牌组与开局', () => {
     expect(getLegalActions(jingoudiao, 0).find(action => action.type === 'hu')).toBeUndefined()
   })
 
-  it('专项训练用固定公开牌河提供倾向证据，残局十张牌墙也可复现', () => {
+  it('专项训练用固定公开牌河提供倾向证据；最后十张永远走500局仓库', () => {
     // 宽床训练从三家同缺刚完成后的第一巡开始：无人提前成型、副露或亮出牌河。
     for (const seed of [0, 1, 2, 3]) {
       const qingyise = createSpecialTrainingGame(seed, 'attack-qingyise')
@@ -135,20 +209,35 @@ describe('牌组与开局', () => {
       expect(qingyise.players.slice(1).every(player => player.hand.every(tile => tile.type !== '万'))).toBe(true)
     }
 
-    const bigHands = createSpecialTrainingGame(88, 'defense-big-hands')
-    expect(bigHands.players[1].melds[0]?.tiles.map(tile => `${tile.value}${tile.type}`)).toEqual(['7条', '7条', '7条'])
-    expect(bigHands.players[1].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['4条', '5条', '6条', '8条', '9条'])
-    expect(bigHands.players[2].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['6筒', '7筒', '8筒', '9筒'])
-    expect(bigHands.players[3].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['5万', '6万', '7万', '8万', '9万'])
+    const bigHandMelds = [0, 1, 2].map(seed => createSpecialTrainingGame(seed, 'defense-big-hands').players[1].melds[0]?.tiles.map(tile => `${tile.value}${tile.type}`))
+    expect(bigHandMelds).toEqual([
+      ['7条', '7条', '7条'],
+      ['7筒', '7筒', '7筒'],
+      ['7万', '7万', '7万'],
+    ])
+    const bigHands = createSpecialTrainingGame(1, 'defense-big-hands')
+    expect(bigHands.players[1].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['4筒', '5筒', '6筒', '8筒', '9筒'])
+    expect(bigHands.players[2].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['6条', '7条', '8条', '9条'])
 
-    const race = createSpecialTrainingGame(88, 'defense-race-qingyise')
-    expect(race.players[1].melds[0]?.tiles.map(tile => `${tile.value}${tile.type}`)).toEqual(['8条', '8条', '8条'])
-    expect(race.players[1].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['4万', '5万', '6万', '8万', '9万'])
-    expect(race.players[3].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['1万', '2万', '3万', '4万'])
+    const raceMelds = [0, 1, 2].map(seed => createSpecialTrainingGame(seed, 'defense-race-qingyise').players[1].melds[0]?.tiles.map(tile => `${tile.value}${tile.type}`))
+    expect(raceMelds).toEqual([
+      ['8条', '8条', '8条'],
+      ['8万', '8万', '8万'],
+      ['8筒', '8筒', '8筒'],
+    ])
+    const race = createSpecialTrainingGame(1, 'defense-race-qingyise')
+    expect(race.players[1].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['4条', '5条', '6条', '8条', '9条'])
+    expect(race.players[3].discards.map(tile => `${tile.value}${tile.type}`)).toEqual(['1条', '2条', '3条', '4条'])
 
-    const endgame = createSpecialTrainingGame(88, 'endgame-count')
-    expect(endgame.wall.map(tile => `${tile.value}${tile.type}`)).toEqual(['1条', '2条', '3条', '4条', '5条', '6条', '7条', '8条', '9条', '9筒'])
-    expect(endgame.players.slice(1).flatMap(player => player.discards)).toHaveLength(45)
+    const endgameGames = [0, 1, 2].map(index => createSpecialTrainingGame(index, 'endgame-count'))
+    const endgameSignatures = endgameGames.map(game => [
+      game.players[0].hand.map(tile => `${tile.value}${tile.type}`).join(','),
+      ...game.players.slice(1).map(player => player.discards.map(tile => `${tile.value}${tile.type}`).join(',')),
+      game.wall.map(tile => `${tile.value}${tile.type}`).join(','),
+    ].join('|'))
+    expect(new Set(endgameSignatures)).toHaveLength(3)
+    expect(endgameGames.every(game => game.wall.length === 10)).toBe(true)
+    expect(endgameGames.every(game => game.players.slice(1).flatMap(player => player.discards).length === 45)).toBe(true)
   })
 })
 
