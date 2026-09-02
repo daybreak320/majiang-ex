@@ -14,6 +14,7 @@ import { getAIThinkingProfile, getTurnTimerDuration, shouldAdvanceAI } from '../
 import { analyzeGame } from '../review/analyzer'
 import { goldenLineLabel } from '../knowledge/mahjongTheory'
 import { recordSpecialTrainingCompleted } from '../utils/playerProfile'
+import { recordDecisionEvents } from '../training/decisionEvents'
 import { MajiangTile } from './MajiangTile'
 
 interface SichuanGameProps {
@@ -981,7 +982,9 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
 
   if (state.phase === 'finished') {
     if (historyRef.current === null) {
-      const entry = buildTheoryHistoryEntry(state, analyzeGame(state.events, 0))
+      const finalReview = analyzeGame(state.events, 0)
+      recordDecisionEvents(state.seed, finalReview.decisions)
+      const entry = buildTheoryHistoryEntry(state, finalReview)
       recordFinishedGame(entry)
       if (trainingKind !== undefined)
         recordSpecialTrainingCompleted(`专项 · ${SPECIAL_TRAINING_META[trainingKind].title}`)

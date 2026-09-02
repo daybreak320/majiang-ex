@@ -8,8 +8,10 @@ import { loadUnfinishedGame } from './game/persistence'
 import { loadPlayerTrainingProfile, recordTrainingStart, savePlayerId, takeNextSpecialTrainingIndex } from './utils/playerProfile'
 import { getSpecialTrainingScenarioCount, SPECIAL_TRAINING_META } from './game/core'
 import type { SpecialTrainingKind } from './game/core'
+import { HomeDashboard } from './components/HomeDashboard'
+import { TrainingLibrary } from './components/TrainingLibrary'
 
-type Page = 'home' | 'game'
+type Page = 'home' | 'game' | 'library'
 
 const SPECIAL_TRAINING_VISUALS: Record<SpecialTrainingKind, { icon: string, category: string, color: string }> = {
   'attack-qingyise': { icon: '🛏️', category: '进攻决策', color: 'from-sky-500 to-blue-500' },
@@ -63,7 +65,7 @@ function App() {
   const trainingProfile = loadPlayerTrainingProfile()
   const specialCompletion = trainingProfile?.specialTrainingCompleted ?? {}
   const recommendedTraining = (Object.keys(SPECIAL_TRAINING_META) as SpecialTrainingKind[])
-    .sort((left, right) => (specialCompletion[`专项 · ${SPECIAL_TRAINING_META[left].title}`] ?? 0) - (specialCompletion[`专项 · ${SPECIAL_TRAINING_META[right].title}`] ?? 0))[0]
+    .sort((left, right) => (specialCompletion[`专项 · ${SPECIAL_TRAINING_META[left].title}`] ?? 0) - (specialCompletion[`专项 · ${SPECIAL_TRAINING_META[right].title}`] ?? 0))[0] ?? 'attack-qingyise'
 
   useEffect(() => {
     if (ignoreSavedGame)
@@ -129,6 +131,9 @@ function App() {
     setPlayerId(normalized)
   }
 
+  if (page === 'library')
+    return <main className="home-page min-h-screen w-full"><div className="container mx-auto py-8 px-4"><button className="secondary-action" onClick={() => setPage('home')}>返回首页</button><TrainingLibrary onSelect={kind => { startSpecialTraining(kind) }} /></div></main>
+
   if (page === 'game')
     return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} opponentConfigs={savedGame === null ? opponents : undefined} trainingKind={savedGame === null ? trainingKind ?? undefined : undefined} trainingScenarioIndex={savedGame === null ? trainingScenarioIndex ?? undefined : undefined} onHome={() => setPage('home')} onNewGame={startGame} onStartTraining={startSpecialTraining} />
 
@@ -148,6 +153,7 @@ function App() {
             </span>
           </div>
         </header>
+        <HomeDashboard playerId={playerId} onStart={startGame} onOpenLibrary={() => setPage('library')} />
         <div className={!playerId ? 'training-locked' : ''}>
         <section className="battle-card" aria-labelledby="battle-training-title">
           <div className="battle-copy">
