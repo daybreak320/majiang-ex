@@ -62,6 +62,9 @@ function App() {
   const [ignoreSavedGame, setIgnoreSavedGame] = useState(false)
   const [playerId, setPlayerId] = useState(() => loadPlayerTrainingProfile()?.playerId ?? '')
   const [playerIdDraft, setPlayerIdDraft] = useState(() => loadPlayerTrainingProfile()?.playerId ?? '')
+  const [showPlayerIdModal, setShowPlayerIdModal] = useState(false)
+  const [pendingTrainingKind, setPendingTrainingKind] = useState<SpecialTrainingKind | null>(null)
+  const [pendingStartGame, setPendingStartGame] = useState(false)
   const trainingProfile = loadPlayerTrainingProfile()
   const specialCompletion = trainingProfile?.specialTrainingCompleted ?? {}
   const recommendedTraining = (Object.keys(SPECIAL_TRAINING_META) as SpecialTrainingKind[])
@@ -76,9 +79,14 @@ function App() {
       setTimedTraining(saved.options?.timedTraining ?? false)
   }, [page, ignoreSavedGame])
 
-  const startGame = () => {
-    if (!playerId)
+  const startGame = (playerIdOverride?: string) => {
+    const effectivePlayerId = playerIdOverride ?? playerId
+    if (!effectivePlayerId) {
+      setPendingTrainingKind(null)
+      setPendingStartGame(true)
+      setShowPlayerIdModal(true)
       return
+    }
     recordTrainingStart('实战训练')
     setIgnoreSavedGame(true)
     setSavedGame(null)
@@ -98,8 +106,11 @@ function App() {
   }
 
   const startSpecialTraining = (kind: SpecialTrainingKind) => {
-    if (!playerId)
+    if (!playerId) {
+      setPendingTrainingKind(kind)
+      setShowPlayerIdModal(true)
       return
+    }
     const scenarioCount = getSpecialTrainingScenarioCount(kind)
     const trainingLabel = `专项 · ${SPECIAL_TRAINING_META[kind].title}`
     const nextRound = (specialTrainingRounds[kind] ?? -1) + 1
@@ -129,6 +140,21 @@ function App() {
       return
     savePlayerId(normalized)
     setPlayerId(normalized)
+    setShowPlayerIdModal(false)
+    const nextTrainingKind = pendingTrainingKind
+    const shouldStartGame = pendingStartGame
+    setPendingTrainingKind(null)
+    setPendingStartGame(false)
+    if (nextTrainingKind !== null)
+      startSpecialTraining(nextTrainingKind)
+    else if (shouldStartGame)
+      startGame(normalized)
+  }
+
+  const openPlayerIdEditor = () => {
+    setPlayerIdDraft(playerId)
+    setPendingTrainingKind(null)
+    setShowPlayerIdModal(true)
   }
 
   if (page === 'library')
@@ -153,7 +179,18 @@ function App() {
             </span>
           </div>
         </header>
-        <HomeDashboard playerId={playerId} onStart={startGame} onOpenLibrary={() => setPage('library')} />
+        <HomeDashboard playerId={playerId} onStart={startGame} onEditPlayerId={openPlayerIdEditor} onOpenLibrary={() => setPage('library')} />
+        {showPlayerIdModal && (
+          <div className="player-id-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setShowPlayerIdModal(false) }}>
+            <section className="player-id-modal" role="dialog" aria-modal="true" aria-labelledby="player-id-modal-title">
+              <span className="eyebrow">身份设置</span>
+              <h2 id="player-id-modal-title">填写名字 ID</h2>
+              <p>确认后即可进入实战训练；训练库仍可独立浏览。</p>
+              <input autoFocus aria-label="名字 ID" maxLength={12} value={playerIdDraft} placeholder="例如：成都雀神" onChange={event => setPlayerIdDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') confirmPlayerId() }} />
+              <div className="player-id-modal-actions"><button className="secondary-action" onClick={() => setShowPlayerIdModal(false)}>取消</button><button className="primary-action" onClick={confirmPlayerId} disabled={!playerIdDraft.trim()}>确认并继续</button></div>
+            </section>
+          </div>
+        )}
         <div className={!playerId ? 'training-locked' : ''}>
         <section className="battle-card" aria-labelledby="battle-training-title">
           <div className="battle-copy">
@@ -203,7 +240,7 @@ function App() {
               </span>
             </label>
             {savedGame !== null && <button className="primary-action battle-start" onClick={continueGame}>继续牌局</button>}
-            <button className="secondary-action battle-start" onClick={startGame}>开始新局</button>
+            <button className="secondary-action battle-start" onClick={() => startGame()}>开始新局</button>
           </div>
         </section>
         <section className="training-section" aria-labelledby="basic-training-title">
