@@ -1,8 +1,8 @@
 import type { AIStyle, GameState, OpponentConfig } from './game/types'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { MajiangHand } from './components/MajiangHand'
 import { ParticleBackground } from './components/ParticleBackground'
-import { SichuanGame } from './components/SichuanGame'
+const SichuanGame = lazy(() => import('./components/SichuanGame').then(module => ({ default: module.SichuanGame })))
 import { APP_VERSION } from './config/release'
 import { loadUnfinishedGame } from './game/persistence'
 import { loadPlayerTrainingProfile, recordTrainingStart, savePlayerId, takeNextSpecialTrainingIndex } from './utils/playerProfile'
@@ -161,7 +161,7 @@ function App() {
     return <main className="home-page min-h-screen w-full"><div className="container mx-auto py-8 px-4"><button className="secondary-action" onClick={() => setPage('home')}>返回首页</button><TrainingLibrary onSelect={kind => { startSpecialTraining(kind) }} /></div></main>
 
   if (page === 'game')
-    return <SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} opponentConfigs={savedGame === null ? opponents : undefined} trainingKind={savedGame === null ? trainingKind ?? undefined : undefined} trainingScenarioIndex={savedGame === null ? trainingScenarioIndex ?? undefined : undefined} onHome={() => setPage('home')} onNewGame={startGame} onStartTraining={startSpecialTraining} />
+    return <Suspense fallback={<main className="game-loading-screen">正在摆好牌桌……</main>}><SichuanGame key={seed} seed={seed} restoredState={savedGame ?? undefined} timedTraining={timedTraining} opponentConfigs={savedGame === null ? opponents : undefined} trainingKind={savedGame === null ? trainingKind ?? undefined : undefined} trainingScenarioIndex={savedGame === null ? trainingScenarioIndex ?? undefined : undefined} onHome={() => setPage('home')} onNewGame={startGame} onStartTraining={startSpecialTraining} /></Suspense>
 
   return (
     <div className="home-page min-h-screen w-full relative">

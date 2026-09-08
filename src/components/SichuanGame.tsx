@@ -14,6 +14,8 @@ import { getAIThinkingProfile, getTurnTimerDuration, shouldAdvanceAI } from '../
 import { analyzeGame } from '../review/analyzer'
 import { goldenLineLabel } from '../knowledge/mahjongTheory'
 import { recordSpecialTrainingCompleted } from '../utils/playerProfile'
+import { MentorGrowthPanel } from './MentorGrowthPanel'
+import { XiaoshiMentorPanel } from './XiaoshiMentorPanel'
 import { recordDecisionEvents } from '../training/decisionEvents'
 import { MajiangTile } from './MajiangTile'
 
@@ -551,6 +553,24 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
               </div>
             )}
       </section>
+      <MentorGrowthPanel
+        seed={state.seed}
+        keyMoments={keyRouteDecisions.map((decision, index) => {
+          const isMistake = decision.opportunityLoss > 0
+          const title = isMistake ? `转折 ${index + 1} · 打 ${tileLabel(decision.tile)}` : `保路 ${index + 1} · 打 ${tileLabel(decision.tile)}`
+          const detail = isMistake
+            ? `当时少留 ${decision.opportunityLoss} 张有效进张；可回放比较 ${decision.bestTiles.slice(0, 2).map(tileLabel).join('、')}。`
+            : `当时保留 ${decision.opportunityActual} 张有效进张；可回放看看这条路线为什么没有走窄。`
+          return {
+            sequence: decision.sequence,
+            title,
+            detail,
+            question: `回到 #${decision.sequence}，${title} 这手还有哪些可选路线？当时应优先比较什么？`,
+            topic: '牌效' as const,
+          }
+        })}
+        onReplay={sequence => setSelectedRouteSequence(sequence)}
+      />
       <section className="settlement-card intelligent-review">
         <div className="intelligent-review-header">
           <div>
@@ -795,6 +815,8 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
 
 export function SichuanGame({ seed, restoredState, timedTraining, opponentConfigs, trainingKind, trainingScenarioIndex, onHome, onNewGame, onStartTraining }: SichuanGameProps) {
   const [state, setState] = useState(() => restoredState ?? (trainingKind === undefined ? createInitialGame(seed, opponentConfigs) : createSpecialTrainingGame(seed, trainingKind, trainingScenarioIndex, true)))
+  // 本地牌局种子：随「重新发牌」更新，让顶部 Seed 显示与当前牌局一致
+  const [localSeed, setLocalSeed] = useState(seed)
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
   const [thinking, setThinking] = useState<PlayerId | null>(null)
   const [thinkingMessage, setThinkingMessage] = useState<string | null>(null)
@@ -803,6 +825,8 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   const [paused, setPaused] = useState(false)
   // 专项训练默认开启导师，实战模式仍由玩家自行决定是否打开。
   const [assistantEnabled, setAssistantEnabled] = useState(() => trainingKind !== undefined)
+  // 经验推理导师：默认开启，随局面命中规则才出声，可随时关掉。
+  const [xiaoshiEnabled, setXiaoshiEnabled] = useState(true)
   const [immediateFeedback, setImmediateFeedback] = useState<string | null>(null)
   const [skipToResult, setSkipToResult] = useState(false)
   const stateRef = useRef(state)
@@ -999,12 +1023,32 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     onHome()
   }
 
-  const abandonGame = () => {
-    if (window.confirm('放弃当前牌局？本局不会计入统计。')) { // eslint-disable-line no-alert
-      scheduleToken.current++
-      clearUnfinishedGame()
-      onHome()
+  const restartGame = () => {
+    if (!window.confirm('重新发牌？当前牌局进度将丢弃，直接开新的一局。')) { // eslint-disable-line no-alert
+      return
     }
+    scheduleToken.current++
+    const nextSeed = Math.floor((Date.now() + Math.random() * 0x7FFFFFFF) % 0x7FFFFFFF)
+    const current = stateRef.current
+    const next = trainingKind === undefined
+      ? createInitialGame(nextSeed, ([1, 2, 3] as PlayerId[]).map(id => ({
+          name: current.players[id].displayName ?? `对手 ${id + 1}`,
+          aiStyle: current.players[id].aiStyle ?? 'steady',
+        })))
+      : createSpecialTrainingGame(nextSeed, trainingKind, trainingScenarioIndex ?? 0, true)
+    clearUnfinishedGame()
+    stateRef.current = next
+    setState(next)
+    setLocalSeed(nextSeed)
+    setError(null)
+    setSelectedTileId(null)
+    setThinking(null)
+    setThinkingMessage(null)
+    setImmediateFeedback(null)
+    setSkipToResult(false)
+    pausedRef.current = false
+    setPaused(false)
+    setRemainingSeconds(null)
   }
 
   return (
@@ -1014,7 +1058,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
           <span className="eyebrow">成都血战到底</span>
           <strong>
             {trainingKind === undefined ? '四人实战' : SPECIAL_TRAINING_META[trainingKind].title} · Seed
-            {seed}
+            {localSeed}
           </strong>
         </div>
         <div>
@@ -1025,6 +1069,14 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
               onChange={event => setAssistantEnabled(event.target.checked)}
             />
             <span>{trainingKind === undefined ? '出牌助手' : 'AI 导师'}</span>
+          </label>
+          <label className="assistant-toggle">
+            <input
+              type="checkbox"
+              checked={xiaoshiEnabled}
+              onChange={event => setXiaoshiEnabled(event.target.checked)}
+            />
+            <span>经验推理</span>
           </label>
           {paused && <span className="turn-timer">已暂停</span>}
           {timedTraining && !paused && remainingSeconds !== null && (
@@ -1040,7 +1092,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
             ? (skipToResult
                 ? <span className="turn-timer">正在直接结算…</span>
                 : <button className="primary-action compact" onClick={() => setSkipToResult(true)}>不看过程，直接出结果</button>)
-            : <button className="secondary-action compact" onClick={abandonGame}>放弃牌局</button>}
+            : <button className="secondary-action compact" onClick={restartGame}>重新发牌</button>}
           <button className="secondary-action compact" onClick={leaveGame}>返回首页</button>
         </div>
       </header>
@@ -1134,6 +1186,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
         </div>
             <div className="game-column game-right">
               {(trainingKind !== undefined || assistantEnabled) && <AssistantPanel state={state} selectedTileId={selectedTileId} />}
+              {xiaoshiEnabled && <XiaoshiMentorPanel state={state} />}
             </div>
           </div>
         )

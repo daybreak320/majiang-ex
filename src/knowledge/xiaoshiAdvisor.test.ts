@@ -1,0 +1,494 @@
+// 潇老师镜像导师 · 规则判定通道单测
+import { describe, expect, it } from 'vitest'
+import type { TileType } from '../types'
+import type { GameState, PlayerId, TileInstance } from '../game/types'
+import { createInitialGame, createTileSet } from '../game/core'
+import { chooseAICommand } from '../game/ai'
+import { executeCommand } from '../game/engine'
+import {
+  buildXiaoshiAdvice,
+  DROP_CALL_MAX_LIVE_WAITS,
+  MAX_DECISION_ADVICE, MAX_OBSERVE_ADVICE,
+  relativeDistance,
+  seatLabelOf,
+} from './xiaoshiAdvisor'
+
+/** 从标准牌池按「1万 2条 3筒」描述取牌 */
+function take(pool: TileInstance[], specification: string): TileInstance[] {
+  return specification.trim().split(/\s+/).flatMap((part) => {
+    const type = part[part.length - 1] as TileType
+    return [...part.slice(0, -1)].map((character) => {
+      const index = pool.findIndex(tile => tile.type === type && tile.value === Number(character))
+      if (index < 0)
+        throw new Error(`夹具缺少 ${character}${type}`)
+      return pool.splice(index, 1)[0]
+    })
+  })
+}
+
+/** 建一局干净局面：四家清空，可继续放牌 */
+function emptyGame(seed: number): { state: GameState, pool: TileInstance[] } {
+  const pool = createTileSet()
+  const state = createInitialGame(seed)
+  state.phase = 'discarding'
+  state.responseWindow = null
+  for (const player of state.players) {
+    player.hand = []
+    player.discards = []
+    player.melds = []
+    player.dingque = '筒'
+    player.hasWon = false
+  }
+  state.wall = pool
+  return { state, pool }
+}
+
+describe('座次映射', () => {
+  it('以行动流为序：+1 为下家、+2 为对家、+3 为上家', () => {
+    expect(seatLabelOf(0, 0)).toBe('自己')
+    expect(seatLabelOf(0, 1)).toBe('下家')
+    expect(seatLabelOf(0, 2)).toBe('对家')
+    expect(seatLabelOf(0, 3)).toBe('上家')
+    expect(seatLabelOf(2, 3)).toBe('下家')
+    expect(seatLabelOf(2, 0)).toBe('对家')
+    expect(seatLabelOf(2, 1)).toBe('上家')
+    expect(relativeDistance(0, 1)).toBe(1)
+    expect(relativeDistance(0, 3)).toBe(3)
+  })
+})
+
+describe('R-RIVER-INFER-v0：对手弃 7 与 9 反推高张', () => {
+  it('下家弃过 7筒、9筒 → 命中，提示高张顺子大概率不在其手', () => {
+    const { state, pool } = emptyGame(801)
+    const discardTiles = take(pool, '7筒 9筒 1万')
+    state.players[1].discards = discardTiles
+    state.players[1].dingque = '条' // 筒不是其定缺 → 打 7/9 筒才含结构信息
+    state.players[3].discards = take(pool, '2万')
+    state.players[0].hand = take(pool, '8筒 9筒') // 自己手上有筒 → 提示才落地
+
+    const advice = buildXiaoshiAdvice(state, 0)
+    const hit = advice.find(item => item.ruleId === 'R-RIVER-INFER-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('下家')
+    expect(hit!.headline).toContain('筒')
+    expect(hit!.quote.length).toBeGreaterThan(0)
+    expect(hit!.confidence).toBeGreaterThan(0)
+    expect(hit!.boundary).toContain('非常规')
+  })
+
+  it('对家弃过 7条、9条 → 命中并指认对家', () => {
+    const { state, pool } = emptyGame(802)
+    state.players[2].discards = take(pool, '7条 9条')
+    state.players[2].dingque = '筒'
+    state.players[0].hand = take(pool, '8条')
+    const advice = buildXiaoshiAdvice(state, 0)
+    const hit = advice.find(item => item.ruleId === 'R-RIVER-INFER-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('对家')
+  })
+
+  it('对手打的是自己的定缺门 → 属于例行打缺，静默', () => {
+    const { state, pool } = emptyGame(804)
+    state.players[1].dingque = '筒' // 筒是其定缺，打 7/9 筒只是打缺
+    state.players[1].discards = take(pool, '7筒 9筒')
+    state.players[0].hand = take(pool, '8筒')
+    expect(buildXiaoshiAdvice(state, 0).find(a => a.ruleId === 'R-RIVER-INFER-v0')).toBeUndefined()
+  })
+
+  it('无人同门弃 7+9 → 不触发（保持安静）', () => {
+    const { state, pool } = emptyGame(803)
+    state.players[1].discards = take(pool, '7筒 8筒 9万') // 有 7 无 9（不同门）
+    state.players[2].discards = take(pool, '9筒 6筒')      // 有 9 无 7
+    const advice = buildXiaoshiAdvice(state, 0)
+    expect(advice.find(item => item.ruleId === 'R-RIVER-INFER-v0')).toBeUndefined()
+  })
+})
+
+/**
+ * 布局：玩家0 手牌 6条对 + 三面子 + 单钓 5条 与 单张 9条（共 13 张，无副露）。
+ * 下家打出 6条 → 可碰。碰后（meld=1，手 11 张）必须弃 1 张：
+ *   - 弃 9条 → 10 张 = 123万 234万 456条 + 5条单钓 → 听 5条（河里已见 2 张 → 活张 1）
+ *   - 弃 5条 → 10 张 = 123万 234万 456条 + 9条单钓 → 听 9条（河里已见 2 张 → 活张 1）
+ * 两种弃法活张都 ≤ 阈值 → 触发「下叫也是给自己看」。
+ */
+function buildDropCallGame(seed: number): GameState {
+  const { state, pool } = emptyGame(seed)
+  const t = (spec: string) => take(pool, spec)
+  state.players[0].hand = t('6条 6条 1万 2万 3万 2万 3万 4万 4条 5条 6条 5条 9条')
+  state.players[0].dingque = '筒'
+  // 下家弃 6条，触发响应窗；另在两家牌河放 2 张 5条、2 张 9条 制造死叫
+  state.players[1].discards = t('6条 5条 9条')
+  state.players[2].discards = t('5条 9条')
+  state.phase = 'responding'
+  state.responseWindow = {
+    kind: 'discard',
+    sourcePlayer: 1,
+    tile: state.players[1].discards[0],
+    eligiblePlayers: [0],
+    choices: { 0: { type: 'peng' } },
+    resumePlayer: 1,
+    pendingMeldIndex: null,
+    sourceEventSequence: 1,
+    isLastTile: false,
+    isKongDiscard: false,
+  }
+  return state
+}
+
+describe('R-DROP-CALL-v0：碰牌下叫前先算叫的存活率', () => {
+  it('可碰即下叫但活张很薄 → 命中，建议别急着碰', () => {
+    const state = buildDropCallGame(811)
+    const advice = buildXiaoshiAdvice(state, 0)
+    const hit = advice.find(item => item.ruleId === 'R-DROP-CALL-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('碰6条')
+    expect(hit!.headline).toContain('给自己看')
+    expect(hit!.evidence[0]).toContain('下家打出 6条')
+    expect(hit!.quote).toContain('暂时不要叫')
+    expect(hit!.confidence).toBeLessThanOrEqual(0.85)
+  })
+
+  it('无响应窗口 → 不触发', () => {
+    const { state, pool } = emptyGame(812)
+    state.players[0].hand = take(pool, '6条 6条 1万 2万 3万 2万 3万 4万 4条 5条 6条 5条 9条')
+    const advice = buildXiaoshiAdvice(state, 0)
+    expect(advice.find(item => item.ruleId === 'R-DROP-CALL-v0')).toBeUndefined()
+  })
+
+  it('活张阈值导出可见且规则用其判定', () => {
+    expect(DROP_CALL_MAX_LIVE_WAITS).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('buildXiaoshiAdvice 主入口', () => {
+  it('无事发生 → 不产生「需要立刻动作」的建议（响应/出牌类保持安静）', () => {
+    const { state, pool } = emptyGame(821)
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 1条 2条 3条 4条')
+    state.players[0].dingque = '筒'
+    const advice = buildXiaoshiAdvice(state, 0)
+    // 没有响应窗口、也没有待出的关键抉择 → 不打扰玩家出牌
+    expect(advice.filter(a => a.windowKind === 'response')).toEqual([])
+    expect(advice.filter(a => a.windowKind === 'discard')).toEqual([])
+  })
+
+  it('决策类与观察类分开限流', () => {
+    const state = buildDropCallGame(822)
+    const all = buildXiaoshiAdvice(state, 0, { maxDecision: 20, maxObserve: 20 })
+    const decision = all.filter(a => a.windowKind !== 'any')
+    const observe = all.filter(a => a.windowKind === 'any')
+    // 放开上限时两类都能出
+    expect(all.length).toBe(decision.length + observe.length)
+    // 默认调用下：决策类 ≤ MAX_DECISION_ADVICE，观察类 ≤ MAX_OBSERVE_ADVICE
+    const dflt = buildXiaoshiAdvice(state, 0)
+    expect(dflt.filter(a => a.windowKind !== 'any').length).toBeLessThanOrEqual(MAX_DECISION_ADVICE)
+    expect(dflt.filter(a => a.windowKind === 'any').length).toBeLessThanOrEqual(MAX_OBSERVE_ADVICE)
+    // 响应窗口下 DROP-CALL 必在其中
+    expect(dflt.some(item => item.ruleId === 'R-DROP-CALL-v0')).toBe(true)
+  })
+
+  it('限流：置信度高的排前面', () => {
+    const state = buildDropCallGame(823)
+    const all = buildXiaoshiAdvice(state, 0, { maxDecision: 20, maxObserve: 20 })
+    if (all.length > 1) {
+      expect(all[0]!.confidence).toBeGreaterThanOrEqual(all[all.length - 1]!.confidence)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// I 簇：形势与信息（读牌类规则）
+// ---------------------------------------------------------------------------
+
+/** 全部命中（不截断），便于逐条断言 */
+function allAdvice(state: GameState, self: 0 | 1 | 2 | 3 = 0) {
+  return buildXiaoshiAdvice(state, self, { maxDecision: 20, maxObserve: 20 })
+}
+
+describe('R-REBUILD-HAND-FROM-MELDS-v0：用副露+弃牌时序重建对手手牌', () => {
+  it('下家两副筒子副露 → 推断其手牌主门', () => {
+    const { state, pool } = emptyGame(901)
+    // 下家：定缺条，碰出两副筒子；万门弃过 2 张（→ 不满足「几乎不弃」，避免被 READ-BIG-DANDIAO 抑制）
+    state.players[1].dingque = '条'
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '3筒 3筒 3筒'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '8筒 8筒 8筒'), fromPlayer: 3 },
+    ]
+    state.players[1].discards = take(pool, '1万 5万')
+    const advice = allAdvice(state)
+    const hit = advice.find(a => a.ruleId === 'R-REBUILD-HAND-FROM-MELDS-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('万')
+    expect(hit!.evidence.join(' ')).toContain('筒')
+  })
+
+  it('副露不足两副 → 静默', () => {
+    const { state, pool } = emptyGame(902)
+    state.players[1].melds = [{ kind: 'peng', tiles: take(pool, '3筒 3筒 3筒'), fromPlayer: 2 }]
+    expect(allAdvice(state).some(a => a.ruleId === 'R-REBUILD-HAND-FROM-MELDS-v0')).toBe(false)
+  })
+})
+
+describe('R-READ-BIG-DANDIAO-v0：逆推对手单钓范围', () => {
+  it('副露两副 + 万门几乎不弃 + 收万只有两家 → 单钓锁在万门', () => {
+    const { state, pool } = emptyGame(911)
+    state.players[0].dingque = '筒'
+    state.players[1].dingque = '条'
+    state.players[2].dingque = '万'
+    state.players[3].dingque = '万'
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '3筒 3筒 3筒'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '8筒 8筒 8筒'), fromPlayer: 3 },
+    ]
+    state.players[1].discards = take(pool, '2条')
+    const advice = allAdvice(state)
+    const hit = advice.find(a => a.ruleId === 'R-READ-BIG-DANDIAO-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('万')
+    // 更具体的单钓推断会抑制通用的「重建手牌」提示
+    expect(advice.some(a => a.ruleId === 'R-REBUILD-HAND-FROM-MELDS-v0')).toBe(false)
+  })
+
+  it('三家都在收该门 → 前提不成立，静默', () => {
+    const { state, pool } = emptyGame(912)
+    for (const p of state.players) p.dingque = '筒' // 四家都收万
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '3筒 3筒 3筒'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '8筒 8筒 8筒'), fromPlayer: 3 },
+    ]
+    expect(allAdvice(state).some(a => a.ruleId === 'R-READ-BIG-DANDIAO-v0')).toBe(false)
+  })
+})
+
+describe('R-INFO-TWO-COLLECT-v0：两家收牌 + 明确信息 ≈ 单行道', () => {
+  it('条门两家收、另一家已在弃条 → 视同单行道', () => {
+    const { state, pool } = emptyGame(921)
+    state.players[0].dingque = '筒'
+    state.players[1].dingque = '筒'
+    state.players[2].dingque = '条'
+    state.players[3].dingque = '条'
+    state.players[1].discards = take(pool, '2条 5条') // 明确反向信息：他在弃条
+    state.players[0].hand = take(pool, '1条 2条 3条 4条') // 条门正是自己的主攻门
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-INFO-TWO-COLLECT-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('条')
+    expect(hit!.evidence.join(' ')).toContain('弃 2 张条')
+  })
+
+  it('另一家没有给出反向信息 → 静默', () => {
+    const { state } = emptyGame(922)
+    state.players[0].dingque = '筒'
+    state.players[1].dingque = '筒'
+    state.players[2].dingque = '条'
+    state.players[3].dingque = '条'
+    expect(allAdvice(state).some(a => a.ruleId === 'R-INFO-TWO-COLLECT-v0')).toBe(false)
+  })
+})
+
+describe('R-DEPTH-JUDGE-v0：深张/浅张判断哪张先出', () => {
+  it('同门两叫口一深一浅 → 浅张先出', () => {
+    const { state, pool } = emptyGame(931)
+    // 自己听 2条/5条（2345 条型），其中 2条 已现、5条 未现
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 2条 3条 4条 5条')
+    state.players[0].dingque = '筒'
+    state.players[1].discards = take(pool, '2条')
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-DEPTH-JUDGE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('2条')
+    expect(hit!.headline).toContain('浅')
+  })
+})
+
+describe('R-NOREACTION-INFO-v0：对手「无反应」也是信息', () => {
+  it('对手不缺万且万门高张全未现 → 高张已成结构', () => {
+    const { state, pool } = emptyGame(941)
+    state.players[2].dingque = '筒'
+    // 已打出 5 张（排除开局伪信号），万门一张没打，且 7/8/9 万全部未现
+    state.players[2].discards = take(pool, '1条 2条 3条 4条 5条')
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-NOREACTION-INFO-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('万')
+    expect(hit!.headline).toContain('已成结构')
+  })
+})
+
+describe('R-ENUM-PROB-CHOICE-v0：读不准就枚举情形算张数', () => {
+  it('两个方案存活张数相同 → 提示按概率选', () => {
+    const { state, pool } = emptyGame(951)
+    // 111/222/333/444/55 万：弃 1 万与弃 4 万都能听且存活数相同
+    state.players[0].hand = take(pool, '1万 1万 1万 2万 2万 2万 3万 3万 3万 4万 4万 4万 5万 5万')
+    state.players[0].dingque = '筒'
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-ENUM-PROB-CHOICE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('按概率')
+  })
+})
+
+describe('R-FUTURE-WAIT-DEAD-v0：未来的叫也要先算存活', () => {
+  it('存在「能下叫但胡张已绝」的路线 → 提示排除', () => {
+    const { state, pool } = emptyGame(961)
+    // 9条 四张全部现完（下家碰 3 张 + 自己手里 1 张）→ 单钓 9条 是死叫；弃 9条 则单钓 5条（活）
+    state.players[1].melds = [{ kind: 'peng', tiles: take(pool, '9条 9条 9条'), fromPlayer: 2 }]
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 1条 2条 3条 5条 9条')
+    state.players[0].dingque = '筒'
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-FUTURE-WAIT-DEAD-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.evidence.join(' ')).toContain('9条')
+  })
+})
+
+describe('R-INFER-BEFORE-PONG-v0：看他碰之前打过什么', () => {
+  it('碰 4万 前打过 2万 → 排除 234万 组合', () => {
+    const { state, pool } = emptyGame(971)
+    const earlier = take(pool, '2万')[0]!
+    const meldTile = take(pool, '4万')[0]!
+    state.events = [
+      { type: 'tile_discarded', playerId: 1, tile: earlier, sequence: 1 } as GameState['events'][number],
+      {
+        type: 'meld_declared',
+        playerId: 1,
+        meld: { kind: 'peng', tiles: [meldTile, ...take(pool, '4万 4万')], fromPlayer: 2 },
+        replacedMeldIndex: null,
+        sequence: 2,
+      } as GameState['events'][number],
+    ]
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-INFER-BEFORE-PONG-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('234万')
+    expect(hit!.evidence.join(' ')).toContain('时序')
+  })
+
+  it('无副露事件 → 静默', () => {
+    const { state } = emptyGame(972)
+    expect(allAdvice(state).some(a => a.ruleId === 'R-INFER-BEFORE-PONG-v0')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D 簇：防守与逃跑
+// ---------------------------------------------------------------------------
+
+describe('R-ESCAPE-AVOID-BIG-v0：躲大牌优先于做大牌', () => {
+  it('对手两副同门副露（但未清一色）→ 目标切防御', () => {
+    const { state, pool } = emptyGame(981)
+    state.players[2].melds = [
+      { kind: 'peng', tiles: take(pool, '3万 3万 3万'), fromPlayer: 1 },
+      { kind: 'peng', tiles: take(pool, '7万 7万 7万'), fromPlayer: 3 },
+    ]
+    state.players[2].discards = take(pool, '2万 5万 9万') // 该门弃得多 → 不构成清一色
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-ESCAPE-AVOID-BIG-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('躲')
+  })
+})
+
+describe('R-ESCAPE-SWITCH-SUIT-v0：对手做清一色 → 反向利用缺章', () => {
+  it('对手两副万子副露且几乎不弃万 → 提示换门', () => {
+    const { state, pool } = emptyGame(991)
+    state.players[2].dingque = '筒'
+    state.players[2].melds = [
+      { kind: 'peng', tiles: take(pool, '3万 3万 3万'), fromPlayer: 1 },
+      { kind: 'peng', tiles: take(pool, '7万 7万 7万'), fromPlayer: 3 },
+    ]
+    state.players[2].discards = take(pool, '2条')
+    const advice = allAdvice(state)
+    const hit = advice.find(a => a.ruleId === 'R-ESCAPE-SWITCH-SUIT-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('清一色')
+    // 具体动作会抑制通用告警
+    expect(advice.some(a => a.ruleId === 'R-ESCAPE-AVOID-BIG-v0')).toBe(false)
+  })
+})
+
+describe('R-SET-BOTTOM-LINE-v0：中前期定好走/放底线', () => {
+  /** 自己听 2条/5条，下家打出 5条 可胡 2 分 */
+  function bottomLineGame(seed: number, wallLeft: number) {
+    const { state, pool } = emptyGame(seed)
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 2条 3条 4条 5条')
+    state.players[0].dingque = '筒'
+    const tile = take(pool, '5条')[0]!
+    state.wall = pool.slice(0, wallLeft)
+    state.phase = 'responding'
+    state.responseWindow = {
+      kind: 'discard',
+      sourcePlayer: 1,
+      tile,
+      eligiblePlayers: [0],
+      choices: { 0: { type: 'hu', value: 2 } },
+      resumePlayer: 1,
+      pendingMeldIndex: null,
+      sourceEventSequence: 1,
+      isLastTile: false,
+      isKongDiscard: false,
+    }
+    return state
+  }
+
+  it('牌墙尚多、存活张够 → 可以放一手', () => {
+    const hit = allAdvice(bottomLineGame(1001, 40)).find(a => a.ruleId === 'R-SET-BOTTOM-LINE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('放一手')
+  })
+
+  it('牌墙将尽 → 点炮就胡', () => {
+    const hit = allAdvice(bottomLineGame(1002, 4)).find(a => a.ruleId === 'R-SET-BOTTOM-LINE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('应该胡')
+  })
+})
+
+describe('真实对局冒烟：整局每一步都调用导师', () => {
+  it('不抛异常、不刷屏（每步 ≤ MAX_ADVICE_PER_TURN）、建议结构完整', () => {
+    let state = createInitialGame(20260907)
+    let adviceCount = 0
+    let steps = 0
+    for (; steps < 4000 && state.phase !== 'finished'; steps++) {
+      const advice = buildXiaoshiAdvice(state, 0)
+      expect(advice.length).toBeLessThanOrEqual(MAX_DECISION_ADVICE + MAX_OBSERVE_ADVICE)
+      for (const item of advice) {
+        expect(item.headline.length).toBeGreaterThan(0)
+        expect(item.advice.length).toBeGreaterThan(0)
+        expect(item.quote.length).toBeGreaterThan(0)
+        expect(item.evidence.length).toBeGreaterThan(0)
+        expect(item.confidence).toBeGreaterThan(0)
+      }
+      adviceCount += advice.length
+
+      let playerId: PlayerId | undefined
+      if (state.phase === 'dingque') {
+        playerId = ([0, 1, 2, 3] as PlayerId[]).find(id => state.players[id].dingque === null)
+      }
+      else if (state.phase === 'responding') {
+        playerId = state.responseWindow?.eligiblePlayers
+          .find(id => state.responseWindow?.choices[id] === undefined)
+      }
+      else {
+        playerId = state.currentPlayer
+      }
+      if (playerId === undefined)
+        break
+      const command = chooseAICommand(state, playerId)
+      if (command === null)
+        break
+      const result = executeCommand(state, command)
+      if (!result.ok)
+        break
+      state = result.nextState
+    }
+    expect(steps).toBeGreaterThan(20)
+    // 导师确实在实战局面里开过口（而不是全程静默 = 规则写死/失效）
+    expect(adviceCount).toBeGreaterThan(0)
+  })
+})
+
+describe('R-EARLY-SAFE-DISCARD-v0：已被碰过的张，早打早安全', () => {
+  it('手上单张 4万 已被上家碰过且不在叫口里 → 建议早打', () => {
+    const { state, pool } = emptyGame(1011)
+    state.players[3].melds = [{ kind: 'peng', tiles: take(pool, '4万 4万 4万'), fromPlayer: 2 }]
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 1条 2条 3条 9条')
+    state.players[0].dingque = '筒'
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-EARLY-SAFE-DISCARD-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('4万')
+    expect(hit!.headline).toContain('安全')
+  })
+})

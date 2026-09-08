@@ -57,8 +57,18 @@ export const GAME_HISTORY_LIMIT = 12
 
 export const REVIEW_FEEDBACK_KEY = 'majiang-ex:review-feedback'
 export const REVIEW_FEEDBACK_LIMIT = 200
+export const MENTOR_DIALOGUE_KEY = 'majiang-ex:mentor-dialogue'
+export const MENTOR_DIALOGUE_LIMIT = 100
 
 export type ReviewFeedbackVerdict = 'accepted' | 'rejected'
+
+export interface MentorDialogue {
+  seed: number
+  prompt: string
+  response: string
+  topic: '牌效' | '攻防' | '鸣牌' | '专项'
+  createdAt: number
+}
 
 export interface ReviewFeedback {
   seed: number
@@ -157,6 +167,45 @@ export function recordReviewFeedback(entry: ReviewFeedback): void {
   }
   catch {
     // Feedback must never block the settlement page in restricted storage contexts.
+  }
+}
+
+function isMentorDialogue(value: unknown): value is MentorDialogue {
+  if (typeof value !== 'object' || value === null)
+    return false
+  const candidate = value as Partial<MentorDialogue>
+  return typeof candidate.seed === 'number'
+    && typeof candidate.prompt === 'string'
+    && typeof candidate.response === 'string'
+    && (candidate.topic === '牌效' || candidate.topic === '攻防' || candidate.topic === '鸣牌' || candidate.topic === '专项')
+    && typeof candidate.createdAt === 'number'
+}
+
+export function loadMentorDialogues(): MentorDialogue[] {
+  const store = storage()
+  if (store === null)
+    return []
+  try {
+    const raw = store.getItem(MENTOR_DIALOGUE_KEY)
+    if (raw === null)
+      return []
+    const value: unknown = JSON.parse(raw)
+    return Array.isArray(value) ? value.filter(isMentorDialogue) : []
+  }
+  catch {
+    return []
+  }
+}
+
+export function recordMentorDialogue(entry: MentorDialogue): void {
+  const store = storage()
+  if (store === null)
+    return
+  try {
+    store.setItem(MENTOR_DIALOGUE_KEY, JSON.stringify([entry, ...loadMentorDialogues()].slice(0, MENTOR_DIALOGUE_LIMIT)))
+  }
+  catch {
+    // Dialogue history must never block gameplay.
   }
 }
 
