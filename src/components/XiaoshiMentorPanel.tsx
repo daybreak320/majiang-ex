@@ -1,5 +1,5 @@
-// 经验推理导师面板（UI 层）
-// 与「朱扬主线教练」(AssistantPanel) 并列展示：主线教练给主决策，这里只补「风格镜像」——
+// 敲破黑板导师面板（UI 层）
+// 与「破晓哥主线教练」(AssistantPanel) 并列展示：主线教练给主决策，这里只补「风格镜像」——
 // 命中规则时输出一句话观点 + 理由原话 + 边界条件 + 可核验证据；未命中则保持安静。
 import { useMemo, useState } from 'react'
 import type { GameState } from '../game/types'
@@ -18,9 +18,9 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   return (
-    <section className="xiaoshi-panel" aria-label="经验推理提示">
+    <section className="xiaoshi-panel" aria-label="敲破黑板提示">
       <div className="xiaoshi-heading">
-        <span className="eyebrow">经验推理</span>
+        <span className="eyebrow">敲破黑板</span>
         <h3>实战风格提示</h3>
         <p>
           {XIAOSHI_CASES.length}

@@ -269,7 +269,7 @@ function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedT
   const huLesson = buildHuLesson(analysis)
   const displayedLesson = showHuLesson ? huLesson : showPengLesson ? pengLesson : lesson
   return (
-    <section className="assistant-panel" aria-label="实时出牌助手">
+    <section className="assistant-panel" aria-label="晓算一下">
       <section className={`coach-card coach-${displayedLesson === null ? analysis.coach.mode : displayedLesson.verdict}`} aria-label="赛中导师">
         <span>{displayedLesson === null ? '赛中导师' : showHuLesson ? '胡牌取舍' : showPengLesson ? '碰牌讲解' : '手把手讲解'}</span>
         <strong>{displayedLesson?.headline ?? analysis.coach.headline}</strong>
@@ -825,7 +825,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   const [paused, setPaused] = useState(false)
   // 专项训练默认开启导师，实战模式仍由玩家自行决定是否打开。
   const [assistantEnabled, setAssistantEnabled] = useState(() => trainingKind !== undefined)
-  // 经验推理导师：默认开启，随局面命中规则才出声，可随时关掉。
+  // 敲破黑板导师：默认开启，随局面命中规则才出声，可随时关掉。
   const [xiaoshiEnabled, setXiaoshiEnabled] = useState(true)
   const [immediateFeedback, setImmediateFeedback] = useState<string | null>(null)
   const [skipToResult, setSkipToResult] = useState(false)
@@ -1068,7 +1068,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
               checked={assistantEnabled}
               onChange={event => setAssistantEnabled(event.target.checked)}
             />
-            <span>{trainingKind === undefined ? '出牌助手' : 'AI 导师'}</span>
+            <span>{trainingKind === undefined ? '晓算一下' : 'AI 导师'}</span>
           </label>
           <label className="assistant-toggle">
             <input
@@ -1076,7 +1076,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
               checked={xiaoshiEnabled}
               onChange={event => setXiaoshiEnabled(event.target.checked)}
             />
-            <span>经验推理</span>
+            <span>敲破黑板</span>
           </label>
           {paused && <span className="turn-timer">已暂停</span>}
           {timedTraining && !paused && remainingSeconds !== null && (
@@ -1104,7 +1104,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
           <div>
             <span className="eyebrow">下宽叫残局 · {wideTenpaiTraining.kind === 'qingyise' ? '清一色' : '杠开'}</span>
             <h3>{wideTenpaiTraining.title}</h3>
-            <p>{wideTenpaiTraining.goal} 请用出牌助手比较：打后有几种叫口、实际还活几张，以及哪条路在最后十张里更容易兑现。</p>
+            <p>{wideTenpaiTraining.goal} 请用晓算一下比较：打后有几种叫口、实际还活几张，以及哪条路在最后十张里更容易兑现。</p>
           </div>
           <div className="strategic-reminder-signals">
             <span>牌墙：10 张</span>
@@ -1119,7 +1119,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
           <div>
             <span className="eyebrow">金钩钓残局 · 每巡换听</span>
             <h3>四副碰牌已完成，只留一张单吊</h3>
-            <p>你每次摸进两张候选后都要二选一：留下哪张单吊，桌上真正还活的牌更多？打开出牌助手，导师会按当前扣张逐手说明推荐与换听代价。</p>
+            <p>你每次摸进两张候选后都要二选一：留下哪张单吊，桌上真正还活的牌更多？打开晓算一下，导师会按当前扣张逐手说明推荐与换听代价。</p>
           </div>
           <div className="strategic-reminder-signals">
             <span>四副碰牌已公开</span>

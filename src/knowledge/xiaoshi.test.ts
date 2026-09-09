@@ -1,4 +1,4 @@
-// 潇老师实战决策库 · 骨架单测
+// 破晓哥实战决策库 · 骨架单测
 import { describe, expect, it } from 'vitest'
 import { SOURCE_EPISODES, XIAOSHI_CASES, getXiaoshiCase } from './xiaoshiCases'
 import { XIAOSHI_RULES, validateRuleEvidence } from './xiaoshiRules'

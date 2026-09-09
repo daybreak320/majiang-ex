@@ -403,7 +403,7 @@ export function buildHistoryEntry(state: GameState, review: GameReview): GameHis
   }
 }
 
-/** 将朱扬理论复盘报告投影为近三局统计所需的历史摘要。 */
+/** 将破晓哥理论复盘报告投影为近三局统计所需的历史摘要。 */
 export function buildTheoryHistoryEntry(state: GameState, report: ReviewReport): GameHistoryEntry {
   const summary = buildSettlementSummary(state)
   const self = summary.players.find(player => player.playerId === 0)

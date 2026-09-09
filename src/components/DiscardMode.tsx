@@ -158,7 +158,7 @@ function evaluateRemainingShape(hand: Tile[]): HandShape {
 }
 
 // ---------------------------------------------------------------------------
-// 理论驱动的候选分析（朱扬《机会数理论》）
+// 理论驱动的候选分析（破晓哥《机会数理论》）
 // 机会数 = 打出后能让手牌直接听牌的有效进张剩余张数之和。
 // ---------------------------------------------------------------------------
 
@@ -176,7 +176,7 @@ function buildReasons(tile: Tile, opportunityTotal: number, waits: CandidateAnal
   }
 
   if (brokeCombos.length > 0) {
-    reasons.push(`⚠️ 拆散强组合 ${brokeCombos.map(([a, b]) => `${a}-${b}`).join('、')}：两张牌辐射 1-9 全部数字，朱扬原话"千万别拆"`)
+    reasons.push(`⚠️ 拆散强组合 ${brokeCombos.map(([a, b]) => `${a}-${b}`).join('、')}：两张牌辐射 1-9 全部数字，破晓哥原话"千万别拆"`)
   }
   else {
     reasons.push(`结构保持完好：${shape.triplets + shape.sequences} 组成型面子、${shape.pairs} 组对子、${shape.adjacentPairs + shape.gapPairs} 组搭子未被破坏`)
@@ -192,7 +192,7 @@ function analyzeCandidate(tile: Tile, hand: Tile[]): CandidateAnalysis {
   const brokeCombos = brokenStrongCombos(hand, tile)
   const shape = evaluateRemainingShape(remaining)
 
-  // 综合分：机会数是主准绳（朱扬：机会数是取舍的准绳），
+  // 综合分：机会数是主准绳（破晓哥：机会数是取舍的准绳），
   // 拆强组合严重惩罚（复盘启发式 tileEfficiency/high），
   // 形状分做同机会数下的次级排序。
   const score = opportunity.total * 100
@@ -621,7 +621,7 @@ export function DiscardMode({ onComplete }: DiscardModeProps) {
               </div>
             ))}
             <div className="pt-1 text-xs text-amber-200/70">
-              📖 理论依据：朱扬《麻将"机会数"理论与实战》——"机会数是取舍的准绳，没有它就很难判断这手牌的取舍"
+              📖 理论依据：破晓哥《麻将"机会数"理论与实战》——"机会数是取舍的准绳，没有它就很难判断这手牌的取舍"
             </div>
           </div>
 

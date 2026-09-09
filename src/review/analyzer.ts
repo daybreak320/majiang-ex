@@ -10,13 +10,13 @@ import {
 
 export const REVIEW_ALGORITHM_VERSION = 'zhuyang-opportunity-v1'
 
-/** 机会数损失阈值：损失 ≥ 4 个有效进张即判定为牌效失误（朱扬：机会数是牌效核心指标） */
+/** 机会数损失阈值：损失 ≥ 4 个有效进张即判定为牌效失误（破晓哥：机会数是牌效核心指标） */
 export const LOSS_THRESHOLD = 4
 /** 防守安全分低于该值视为危险牌（3/6/9 线非熟张） */
 export const DANGER_THRESHOLD = 0.5
 /** 牌墙剩余 ≤ 该值视为尾盘（初始 108 张，4 家各 13 张后剩 56 张） */
 export const LATE_GAME_WALL = 40
-/** 机会数 ≥ 该值视为优秀决策（朱扬：两头听最大 8） */
+/** 机会数 ≥ 该值视为优秀决策（破晓哥：两头听最大 8） */
 export const HIGHLIGHT_MIN_OPPORTUNITY = 8
 
 const tileLabel = (tile: Tile) => `${tile.type}${tile.value}`

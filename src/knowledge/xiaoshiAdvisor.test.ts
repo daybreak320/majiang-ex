@@ -1,4 +1,4 @@
-// 潇老师镜像导师 · 规则判定通道单测
+// 破晓哥镜像导师 · 规则判定通道单测
 import { describe, expect, it } from 'vitest'
 import type { TileType } from '../types'
 import type { GameState, PlayerId, TileInstance } from '../game/types'
@@ -423,16 +423,19 @@ describe('R-SET-BOTTOM-LINE-v0：中前期定好走/放底线', () => {
     return state
   }
 
-  it('牌墙尚多、存活张够 → 可以放一手', () => {
-    const hit = allAdvice(bottomLineGame(1001, 40)).find(a => a.ruleId === 'R-SET-BOTTOM-LINE-v0')
+  it('牌墙尚多、存活张够 → 这条路要不要放，由放一手三兄弟回答', () => {
+    const advice = allAdvice(bottomLineGame(1001, 40))
+    const hit = advice.find(a => a.ruleId === 'R-SET-BOTTOM-LINE-v0' || a.ruleId === 'R-ZIMO-OR-NOTHING-v0')
     expect(hit).toBeDefined()
-    expect(hit!.headline).toContain('放一手')
+    expect(hit!.headline).toMatch(/放一手|不胡/)
   })
 
-  it('牌墙将尽 → 点炮就胡', () => {
-    const hit = allAdvice(bottomLineGame(1002, 4)).find(a => a.ruleId === 'R-SET-BOTTOM-LINE-v0')
+  it('牌墙将尽 → 交给 EV 规则算放过 vs 胡', () => {
+    const advice = allAdvice(bottomLineGame(1002, 4))
+    const hit = advice.find(a => a.ruleId === 'R-EV-DECLINE-HU-v0')
     expect(hit).toBeDefined()
-    expect(hit!.headline).toContain('应该胡')
+    expect(hit!.headline).toContain('EV')
+    expect(hit!.evidence.some(e => e.includes('EV 对比'))).toBe(true)
   })
 })
 
@@ -490,5 +493,139 @@ describe('R-EARLY-SAFE-DISCARD-v0：已被碰过的张，早打早安全', () =>
     expect(hit).toBeDefined()
     expect(hit!.headline).toContain('4万')
     expect(hit!.headline).toContain('安全')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 第二批接判定化的规则（探针里罕见，用夹具证明它们确实会开口）
+// ---------------------------------------------------------------------------
+
+describe('R-THREAT-ESCAPE-v0：识别大牌威胁 → 点炮就走', () => {
+  it('对家两副同门副露成型 + 下家点炮 → 必胡，并压住通用底线', () => {
+    const { state, pool } = emptyGame(1101)
+    state.players[2].dingque = '条'
+    state.players[2].melds = [
+      { kind: 'peng', tiles: take(pool, '3万 3万 3万'), fromPlayer: 1 },
+      { kind: 'peng', tiles: take(pool, '7万 7万 7万'), fromPlayer: 3 },
+    ]
+    const tile = take(pool, '5万')[0]!
+    state.players[0].hand = take(pool, '1万 2万 3万 9条 9条 1筒 2筒 3筒 5筒 6筒 7筒 1条 2条')
+    state.players[0].dingque = '条'
+    state.responseWindow = {
+      kind: 'discard', sourcePlayer: 1, tile, eligiblePlayers: [0],
+      choices: { 0: { type: 'hu', value: 2 } }, resumePlayer: 1, pendingMeldIndex: null,
+      sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+    }
+    const advice = allAdvice(state)
+    const hit = advice.find(a => a.ruleId === 'R-THREAT-ESCAPE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('点炮就胡')
+    // 具体威胁会把通用的「放一手」压掉，避免同一件事说两遍
+    expect(advice.some(a => a.ruleId === 'R-SET-BOTTOM-LINE-v0')).toBe(false)
+  })
+})
+
+describe('R-CHECK-DINGQUE-BEFORE-PONG-v0：早期碰牌前先看缺章', () => {
+  it('开局可碰 9筒 且多家缺筒 → 提醒先确认缺章', () => {
+    const { state, pool } = emptyGame(1102)
+    for (const id of [0, 1, 2, 3] as PlayerId[])
+      state.players[id].dingque = null
+    state.players[0].dingque = '条'
+    state.players[1].dingque = '筒'
+    state.players[2].dingque = '筒'
+    state.players[3].dingque = '筒'
+    state.players[0].hand = take(pool, '9筒 9筒 1万 2万 3万 4万 5万 6万 7万 8万 9万 1筒 2筒')
+    const tile = take(pool, '9筒')[0]!
+    state.players[1].discards = take(pool, '1条 2条')
+    state.responseWindow = {
+      kind: 'discard', sourcePlayer: 1, tile, eligiblePlayers: [0],
+      choices: { 0: { type: 'peng' } }, resumePlayer: 1, pendingMeldIndex: null,
+      sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+    }
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-CHECK-DINGQUE-BEFORE-PONG-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('缺章')
+  })
+})
+
+describe('R-SINGLE-LINE-ATTACK-v0：缺章优势转进攻', () => {
+  it('三家缺条而自己手握 6 张条 → 提示制定进攻思路', () => {
+    const { state, pool } = emptyGame(1103)
+    state.players[0].dingque = '筒'
+    for (const id of [1, 2, 3] as PlayerId[])
+      state.players[id].dingque = '条'
+    state.players[0].hand = take(pool, '1条 2条 3条 4条 5条 6条 1万 2万 3万 7万 8万 9万 4万')
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-SINGLE-LINE-ATTACK-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('进攻')
+  })
+})
+
+describe('R-NO-ARMS-RACE-v0：多家做大时不加入军备竞赛', () => {
+  it('两家各有两副同门副露 + 自己也想做筒清 → 提示转稳健', () => {
+    const { state, pool } = emptyGame(1104)
+    state.players[1].dingque = '条'
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '2筒 2筒 2筒'), fromPlayer: 0 },
+      { kind: 'peng', tiles: take(pool, '5筒 5筒 5筒'), fromPlayer: 3 },
+    ]
+    state.players[3].dingque = '条'
+    state.players[3].melds = [
+      { kind: 'peng', tiles: take(pool, '3筒 3筒 3筒'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '8筒 8筒 8筒'), fromPlayer: 1 },
+    ]
+    state.players[0].dingque = '万'
+    state.players[0].hand = take(pool, '1筒 2筒 3筒 4筒 5筒 6筒 2条 3条 4条 5条 6条 7条 8条')
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-NO-ARMS-RACE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('军备竞赛')
+  })
+})
+
+describe('R-DROP-DEAD-PAIR-v0：死对先打别舍不得', () => {
+  it('9条对子外面两张已现、且刚刚才绝 → 提示早打腾位置', () => {
+    const { state, pool } = emptyGame(1105)
+    state.players[0].dingque = '筒'
+    state.players[0].hand = take(pool, '9条 9条 1万 2万 3万 4万 5万 6万 7万 8万 9万 1条 2条')
+    const gone = take(pool, '9条 9条')
+    state.players[1].discards = [gone[0]!]
+    state.players[2].discards = [gone[1]!]
+    state.events = [
+      { sequence: 1, type: 'tile_discarded', playerId: 2, tile: gone[1]! },
+    ]
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-DROP-DEAD-PAIR-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('9条')
+  })
+})
+
+describe('R-KEEP-LIVE-v0：碰后孤张二选一用牌河算账', () => {
+  it('5筒邻张已现 3 张、9筒全无信息 → 留 5筒打 9筒', () => {
+    const { state, pool } = emptyGame(1106)
+    state.players[0].dingque = '条'
+    state.players[0].melds = [{ kind: 'peng', tiles: take(pool, '3万 3万 3万'), fromPlayer: 1 }]
+    state.players[0].hand = take(pool, '1万 2万 3万 1条 2条 3条 7条 8条 9条 5筒 9筒')
+    // 5筒 的邻张（3/4/6/7筒）被下家打过 3 张 → 它更可能还在墙里
+    state.players[1].discards = take(pool, '3筒 4筒 6筒')
+    state.events = [
+      { sequence: 1, type: 'meld_declared', playerId: 0, meld: state.players[0].melds[0]!, replacedMeldIndex: null },
+    ]
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-KEEP-LIVE-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('5筒')
+  })
+})
+
+describe('R-EXPECT-MINDSET-v0：期望收益意识，结果不改打法', () => {
+  it('刚刚放过一次和牌 → 提醒按长期主义执行', () => {
+    const { state, pool } = emptyGame(1107)
+    state.players[0].dingque = '筒'
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 1条 2条 3条 4条')
+    state.events = [
+      { sequence: 1, type: 'passed_win_set', playerId: 0, value: 2 },
+    ]
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-EXPECT-MINDSET-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('别让结果改了你的打法')
   })
 })

@@ -1,7 +1,7 @@
-// 潇老师实战决策库 · 决策卡库（案例证据）
+// 破晓哥实战决策库 · 决策卡库（案例证据）
 // ⚠️ 由 xiaolaoshi/tools/sync_knowledge.py 从工作区 m<N>/cards/cases.json 同步生成，勿手改
 // 语料：faster-whisper medium 口播转录 + 关键帧画面佐证（原话已校正同音错字）
-// 约定：理由保留原话；置信度 < 1 的牌张细节以口播为准；朱扬锚点待理论对齐。
+// 约定：理由保留原话；置信度 < 1 的牌张细节以口播为准；破晓哥锚点待理论对齐。
 
 import type { DecisionCase } from './xiaoshiTypes'
 

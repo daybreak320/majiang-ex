@@ -1,5 +1,5 @@
 /**
- * 潇老师课程库单测：数据完整性 + 查询函数行为
+ * 破晓哥课程库单测：数据完整性 + 查询函数行为
  */
 import { describe, it, expect } from 'vitest'
 import {

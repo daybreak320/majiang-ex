@@ -1,5 +1,5 @@
 /**
- * 潇老师主题地图 v1 —— 课程库数据（程序化生成，勿手改）
+ * 破晓哥主题地图 v1 —— 课程库数据（程序化生成，勿手改）
  *
  * 来源：今日头条主页全量抓取 309 条 → 去重 289 → 教学可用 260 条
  * 生成脚本对齐工作区《主题地图-v1-课表.md》；再生成时改 工作区/主题地图/ 数据后重跑转换。
@@ -440,7 +440,7 @@ export const xiaoshiClusters: readonly XioshiClusterMeta[] = [
       '日常好运来',
       '日常好运点赞分享',
       '小小单行道拿下',
-      '新年快乐清照茶府春节不打烊',
+      '新年快乐破晓哥春节不打烊',
       '牌势随好见好就收',
       '为了涨翻放弃涨翻',
       '说顺也不顺',
@@ -769,7 +769,7 @@ export const xiaoshiLessons: readonly XioshiLesson[] = [
   { title: '日常好运来', cluster: 'X', mustRead: false, layerId: null },
   { title: '日常好运点赞分享', cluster: 'X', mustRead: false, layerId: null },
   { title: '小小单行道拿下', cluster: 'X', mustRead: false, layerId: null },
-  { title: '新年快乐清照茶府春节不打烊', cluster: 'X', mustRead: false, layerId: null },
+  { title: '新年快乐破晓哥春节不打烊', cluster: 'X', mustRead: false, layerId: null },
   { title: '牌势随好见好就收', cluster: 'X', mustRead: false, layerId: null },
   { title: '为了涨翻放弃涨翻', cluster: 'X', mustRead: false, layerId: null },
   { title: '说顺也不顺', cluster: 'X', mustRead: false, layerId: null },

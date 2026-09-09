@@ -1,6 +1,6 @@
 import type { Meld, TileInstance } from '../game/types'
 import type { Tile } from '../types'
-// 朱扬麻将理论知识模块测试
+// 破晓哥麻将理论知识模块测试
 import { describe, expect, it } from 'vitest'
 import {
   assessDiscardSafety,

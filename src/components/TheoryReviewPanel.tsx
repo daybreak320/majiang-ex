@@ -209,7 +209,7 @@ export function TheoryReviewPanel({ report, seed }: { report: ReviewReport, seed
     <section className="settlement-card theory-review">
       <div className="theory-review-header">
         <div>
-          <span className="eyebrow">朱扬理论复盘</span>
+          <span className="eyebrow">破晓哥理论复盘</span>
           <h3>{majorIssues.length > 0 ? `本局有 ${majorIssues.length} 个优先改进点` : '本局出牌节奏整体稳健'}</h3>
           <p className="muted">结论只依据当时已经公开的牌河、副露、牌墙与手牌结构；它在比较哪条路更容易兑现，不冒充精确胜率。</p>
         </div>

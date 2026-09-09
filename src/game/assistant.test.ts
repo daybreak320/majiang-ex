@@ -33,7 +33,7 @@ function fixture(): GameState {
   return state
 }
 
-describe('实时出牌助手', () => {
+describe('实时晓算一下', () => {
   it('推荐合法出牌并按全部未知牌计算下一张胡牌概率', () => {
     const state = fixture()
     const analysis = buildDiscardAssistant(state)

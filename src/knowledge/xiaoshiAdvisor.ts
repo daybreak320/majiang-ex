@@ -1,8 +1,8 @@
-// 潇老师镜像导师 · 规则判定通道（引擎层，无 UI 依赖）
+// 破晓哥镜像导师 · 规则判定通道（引擎层，无 UI 依赖）
 // 定位：把 xiaoshiRules.ts 的规则库从「文本条目」变成「对一局 GameState 实时判定」的建议。
-// 与 game/assistant.ts（朱扬主线教练）平行：朱扬教练按机会数/番型/攻守给主建议，
-// 潇老师通道在规则命中时补充「风格镜像」——含原话金句、边界条件与置信度。
-// 约定：宁缺毋滥。未命中 = 空数组 = 保持安静，绝不用规则库去抢朱扬教练的主决策权。
+// 与 game/assistant.ts（破晓哥主线教练）平行：破晓哥教练按机会数/番型/攻守给主建议，
+// 破晓哥通道在规则命中时补充「风格镜像」——含原话金句、边界条件与置信度。
+// 约定：宁缺毋滥。未命中 = 空数组 = 保持安静，绝不用规则库去抢破晓哥教练的主决策权。
 // 消费方：训练引擎「导师建议」入口 / 未来 UI 的双视角并列展示。
 
 import type { Tile, TileType } from '../types'
@@ -20,7 +20,7 @@ export type SeatLabel = '自己' | '下家' | '对家' | '上家'
 /**
  * 相对座次。引擎里出牌后按 (a - source + 4) % 4 的距离依次响应（见 engine.ts），
  * 因此 (id - self + 4) % 4 === 1 的那家最先响应 = 口语中的「下家」；
- * 该模型与潇老师「下家打过 7 筒 9 筒」的方位语义自洽。
+ * 该模型与破晓哥「下家打过 7 筒 9 筒」的方位语义自洽。
  */
 export function seatLabelOf(self: PlayerId, id: PlayerId): SeatLabel {
   const distance = ((id - self + 4) % 4) as 0 | 1 | 2 | 3
@@ -36,7 +36,7 @@ export function relativeDistance(self: PlayerId, id: PlayerId): 0 | 1 | 2 | 3 {
 // 命中建议结构
 // ---------------------------------------------------------------------------
 
-/** 一条命中的潇老师镜像建议 */
+/** 一条命中的破晓哥镜像建议 */
 export interface XiaoshiAdvice {
   /** 规则 id，对应 xiaoshiRules.ts */
   ruleId: string
@@ -830,6 +830,943 @@ function matchEarlySafeDiscard(ctx: RuleContext): RuleHit | null {
 }
 
 // ---------------------------------------------------------------------------
+// 共享小工具（多条规则复用）
+// ---------------------------------------------------------------------------
+
+/** 收某门的家数（还没定缺的早期阶段视为「收」） */
+function collectorCount(state: GameState, suit: TileType): number {
+  return state.players.filter(p => p.dingque !== suit).length
+}
+
+/** 手牌里的对子 */
+function pairsOf(hand: TileInstance[]): { tile: TileInstance, count: number }[] {
+  const buckets = new Map<string, TileInstance[]>()
+  for (const t of hand) {
+    const key = `${t.type}-${t.value}`
+    const arr = buckets.get(key) ?? []
+    arr.push(t)
+    buckets.set(key, arr)
+  }
+  return [...buckets.values()].filter(g => g.length >= 2).map(g => ({ tile: g[0]!, count: g.length }))
+}
+
+/** 孤张：同门 ±2 内没有伙伴、且自己也不成对 */
+
+/**
+ * 孤张判定。若该张在手上有对子/坎子，或同门附近还有 ±2 内的牌，就不算孤张。
+ */
+function isolatedTiles(hand: TileInstance[]): TileInstance[] {
+  const counts = new Map<string, number>()
+  for (const t of hand) {
+    const key = `${t.type}-${t.value}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return hand.filter(t => {
+    if ((counts.get(`${t.type}-${t.value}`) ?? 0) >= 2)
+      return false
+    return !hand.some(o => o.id !== t.id && o.type === t.type && Math.abs(o.value - t.value) <= 2)
+  })
+}
+
+/** 按类型+点数去重取代表张 */
+function uniqueTiles(tiles: TileInstance[]): TileInstance[] {
+  const seen = new Set<string>()
+  return tiles.filter(t => {
+    const key = `${t.type}-${t.value}`
+    if (seen.has(key))
+      return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** 最近 n 个事件里是否有「自己刚副露」——用于限定「碰/杠后弃孤张」类规则 */
+function iJustMelded(state: GameState, self: PlayerId, within: number): boolean {
+  const start = Math.max(0, state.events.length - within)
+  for (let i = state.events.length - 1; i >= start; i--) {
+    const ev = state.events[i]
+    if (ev !== undefined && ev.type === 'meld_declared' && ev.playerId === self)
+      return true
+  }
+  return false
+}
+
+/** 最近 n 个事件里自己是否「放过一手胡」——期望收益类规则的触发源 */
+function iJustPassedWin(state: GameState, self: PlayerId, within: number): boolean {
+  const start = Math.max(0, state.events.length - within)
+  for (let i = state.events.length - 1; i >= start; i--) {
+    const ev = state.events[i]
+    if (ev !== undefined && ev.type === 'passed_win_set' && ev.playerId === self && ev.value !== null)
+      return true
+  }
+  return false
+}
+
+/** 已经在做大牌的对手（≥2 副同门副露 / 或 ≥3 副副露），返回最强威胁者 */
+function bigHandThreat(state: GameState, self: PlayerId): PlayerId | null {
+  let best: PlayerId | null = null
+  let bestCount = 0
+  for (const id of opponentsOf(self)) {
+    const p = state.players[id]
+    if (p.hasWon)
+      continue
+    const dom = dominantMeldSuit(p.melds)
+    const score = Math.max(dom?.count ?? 0, p.melds.length >= 3 ? 2 : 0)
+    if (score >= 2 && score > bestCount) {
+      best = id
+      bestCount = score
+    }
+  }
+  return best
+}
+
+/** 自己当前的胡：响应窗口里的 hu 选择 */
+function myHuChoice(state: GameState, self: PlayerId): { value: number, sourcePlayer: PlayerId, tile: TileInstance } | null {
+  const window = state.responseWindow
+  if (window === null || window.kind !== 'discard')
+    return null
+  const choice = window.choices[self]
+  if (choice?.type !== 'hu')
+    return null
+  return { value: choice.value, sourcePlayer: window.sourcePlayer, tile: window.tile }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-THREAT-ESCAPE-v0：识别到大牌威胁 → 点炮就走
+// ---------------------------------------------------------------------------
+
+/** 自摸收益相对点炮收益的倍数（川麻自摸普遍翻倍，够不成悬殊就不改打法） */
+const THREAT_SELF_DRAW_EDGE = 2
+
+/**
+ * 触发：别人点炮可胡 + 已识别出某对手大牌成势（≥2 副同门副露 / ≥3 副副露）。
+ * 依据 cas_002_d2：该怂就怂，不然挨个满的。
+ * 边界（规则库）：无满牌威胁时保留放一手打法——所以触发前必须先有证据。
+ */
+function matchThreatEscape(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const hu = myHuChoice(state, self)
+  if (hu === null)
+    return null
+  const threat = bigHandThreat(state, self)
+  if (threat === null)
+    return null
+  const tp = state.players[threat]
+  const dom = dominantMeldSuit(tp.melds)
+  const seat = seatLabelOf(self, threat)
+  const target = seatLabelOf(self, hu.sourcePlayer)
+  return {
+    windowKind: 'response',
+    headline: `${seat}大牌已成势 → ${target}打出${tileLabel(hu.tile)}点炮就胡`,
+    advice: `先把局势说清楚：${seat}已经${dom === null ? `摆出 ${tp.melds.length} 副副露` : `在${dom.type}门碰出 ${dom.count} 副`}，` +
+      `说明他不是在做小胡，是在走大牌路线。这个时候你等着自摸是${state.wall.length}分之一的赌博，` +
+      `而点炮一放就可能挨满。${target}打出${tileLabel(hu.tile)}（${hu.value} 分）已经是可兑现的收益，` +
+      `直接胡掉——该怂就怂。自摸收益再高（顶多差 ${THREAT_SELF_DRAW_EDGE} 倍），也抵不过一次被满的概率。`,
+    evidence: [
+      `威胁源：${seat}${dom === null ? `副露 ${tp.melds.length} 副` : `${dom.type}门副露 ${dom.count} 副`}`,
+      `当前选择：${target}打出${tileLabel(hu.tile)}，可胡 ${hu.value} 分`,
+      `牌墙剩 ${state.wall.length} 张 → 自摸机会有限`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-KEEP-LIVE-v0：碰/杠后两张孤张二选一，用牌河算存活账
+// ---------------------------------------------------------------------------
+
+/** 邻张已现越多 → 该孤张还留在墙里的概率越高，越容易摸成对 */
+const KEEP_LIVE_MIN_NEIGHBORS = 2
+
+function matchKeepLive(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const base = 13 - me.melds.length * 3
+  if (me.hand.length !== base + 1 || !iJustMelded(state, self, 3))
+    return null
+  const iso = uniqueTiles(isolatedTiles(me.hand))
+  if (iso.length < 2)
+    return null
+  const scored = iso.map(t => {
+    let neighbors = 0
+    for (const delta of [-2, -1, 1, 2]) {
+      const v = t.value + delta
+      if (v >= 1 && v <= 9)
+        neighbors += seenCount(state, t.type, v)
+    }
+    return { tile: t, neighbors }
+  }).sort((a, b) => b.neighbors - a.neighbors)
+  const keep = scored[0]
+  const drop = scored[scored.length - 1]
+  if (keep === undefined || drop === undefined || keep.neighbors < KEEP_LIVE_MIN_NEIGHBORS || keep.neighbors === drop.neighbors)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `两张孤张 ${scored.map(s => tileLabel(s.tile)).join('、')}：留${tileLabel(keep.tile)}打${tileLabel(drop.tile)}`,
+    advice: `刚碰/杠完要丢孤张，这个时候别凭手感挑，用牌河算存活账：` +
+      `${tileLabel(keep.tile)} 的邻张在桌上已经现了 ${keep.neighbors} 张，说明它这张还有更多可能留在墙里，` +
+      `多留一下就多一个成对的机会；反过来${tileLabel(drop.tile)}周围信息少、也没人喂，` +
+      `留着多半变成废张。注意对手如果是「拆搭子」（抱肚子）打法，这条推断要反过来。`,
+    evidence: scored.map(s => `${tileLabel(s.tile)}：邻张已现 ${s.neighbors} 张`).slice(0, 4),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-CHECK-DINGQUE-BEFORE-PONG-v0：早期碰牌前先看全缺章
+// ---------------------------------------------------------------------------
+
+/** 早期阈值：全场弃牌合计不超过这么多张时，各家缺章还没在这一局里显露出来 */
+const EARLY_PONG_MAX_DISCARDS = 12
+
+function matchCheckDingqueBeforePong(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const window = state.responseWindow
+  if (window === null || window.kind !== 'discard' || window.sourcePlayer === self)
+    return null
+  if (window.choices[self]?.type !== 'peng')
+    return null
+  const totalDiscards = state.players.reduce((n, p) => n + p.discards.length, 0)
+  if (totalDiscards > EARLY_PONG_MAX_DISCARDS)
+    return null
+  const target = window.tile
+  const seat = seatLabelOf(self, window.sourcePlayer)
+  const dq = state.players.map(p => `${seatLabelOf(self, p.id)}${p.dingque === null ? '?' : `缺${p.dingque}`}`).join('、')
+  const conflict = state.players.filter(p => p.dingque === target.type).length
+  return {
+    windowKind: 'response',
+    headline: `早期碰${tileLabel(target)}：先确认全桌缺章再动手`,
+    advice: `碰牌是不可逆的开关，而开局才打了 ${totalDiscards} 张，各家缺章信息还没暴露够。` +
+      `现在碰掉${tileLabel(target)}，等于把可能更好的方向锁死——` +
+      `万一对面三家都缺${target.type}，这张${target.type}本来是白送的优势，你反而因为碰牌把它扔了。` +
+      `先看一遍缺章：${dq}。若碰的方向与你的缺章优势一致，再放心碰。`,
+    evidence: [
+      `${seat}打出 ${tileLabel(target)}，你可碰`,
+      `当前弃牌总量 ${totalDiscards} 张（≤ ${EARLY_PONG_MAX_DISCARDS}，判为早期）`,
+      conflict > 1 ? `注意：已有 ${conflict} 家缺${target.type} → 碰这张会丢掉该门优势` : `尚未发现多家缺${target.type}`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-BIGDANDIAO-VS-XIAJIAO-v0：单点大吊 vs 多路下叫，先算吊张差
+// ---------------------------------------------------------------------------
+
+/** 单吊路线要多出这么多活张才值得放弃多路 */
+const BIG_DANDIAO_LIVE_EDGE = 2
+
+function matchBigdandiaoVsXiajiao(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const plans = waitPlans(state.players[self], ctx.visible)
+  if (plans.length < 2)
+    return null
+  const single = plans.find(p => p.waits.length === 1)
+  const multi = plans.find(p => p.waits.length >= 2)
+  if (single === undefined || multi === undefined)
+    return null
+  const singleWait = single.waits[0]
+  if (singleWait === undefined)
+    return null
+  const gap = single.live - multi.live
+  if (Math.abs(gap) > BIG_DANDIAO_LIVE_EDGE)
+    return null
+  const chooseSingle = gap > 0
+  return {
+    windowKind: 'discard',
+    headline: chooseSingle
+      ? `单吊${singleWait.label}吊张多 ${gap} 张 → 走大吊路线`
+      : `大吊只多一点吊张，不如走多路下叫`,
+    advice: chooseSingle
+      ? `单点大吊${singleWait.label}能等 ${single.live} 张，比多路路线多 ${gap} 张，` +
+        `优势虽不算巨大但方向明确，可以接受「少胡几家」换「更容易兑现」。` +
+        `注意这个估算只押当前时点——外面的牌还在流动，别人可能先摸走吊张，是动态账不是死数字。`
+      : `单吊${singleWait.label}看着唬人，实际只对${multi.waits.map(w => w.label).join('/')}的多路方案多 ${Math.abs(gap) === 0 ? '不了' : `${gap}`}` +
+        `${gap === 0 ? '' : ''}太多张。差别只有一两张的时候，早下叫更值：` +
+        `既拿到即时收益，也少给别家一手做大牌的时间。别为大吊吊死在一棵树上。`,
+    evidence: [
+      `单吊路线：${single.discard === null ? '不打' : `打${tileLabel(single.discard)}`} → ${singleWait.label}（活 ${single.live} 张）`,
+      `多路路线：${multi.discard === null ? '不打' : `打${tileLabel(multi.discard)}`} → ${multi.waits.map(w => w.label).join('/')}（活 ${multi.live} 张）`,
+      `判据：吊张差 ${gap}（≤${BIG_DANDIAO_LIVE_EDGE} → 走早下叫/多路；明显更多 → 走单吊）`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-ZIMO-OR-NOTHING-v0：中盘小胡点炮可以放过等自摸
+// ---------------------------------------------------------------------------
+
+const ZIMO_MIN_WALL = 20
+const ZIMO_MIN_LIVE = 3
+const ZIMO_MAX_HU_VALUE = 2
+
+function matchZimoOrNothing(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const hu = myHuChoice(state, self)
+  if (hu === null || hu.value > ZIMO_MAX_HU_VALUE)
+    return null
+  if (bigHandThreat(state, self) !== null)
+    return null // 有大牌威胁时被 R-THREAT-ESCAPE 接管
+  const wallLeft = state.wall.length
+  if (wallLeft < ZIMO_MIN_WALL)
+    return null
+  const best = waitPlans(state.players[self], ctx.visible)[0]
+  const live = best?.live ?? 0
+  if (live < ZIMO_MIN_LIVE)
+    return null
+  const seat = seatLabelOf(self, hu.sourcePlayer)
+  return {
+    windowKind: 'response',
+    headline: `${seat}打出${tileLabel(hu.tile)}只值 ${hu.value} 分：预设自摸就走，点炮不胡`,
+    advice: `这是个典型的「期望差掰手腕」局面：点炮收 ${hu.value} 分，而自摸能收好几家、` +
+      `带上自摸加番，收益差不止一倍。牌墙还有 ${wallLeft} 张、你的存活张有 ${live} 张，` +
+      `自摸窗口还开着。开局就该把这条预设写死：自摸即走，别人点炮的小胡不接。` +
+      `当然，一旦牌局将尽或者外面有大牌威胁成型，这条预设要立刻作废、改成点炮就走。`,
+    evidence: [
+      `${seat}打出 ${tileLabel(hu.tile)}：点炮 ${hu.value} 分`,
+      `牌墙剩 ${wallLeft} 张（≥ ${ZIMO_MIN_WALL}），存活张 ${live} 张（≥ ${ZIMO_MIN_LIVE}）`,
+      `未检测到对手大牌成势 → 等自摸成立`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-EV-DECLINE-HU-v0：尾盘点炮用 EV 算放过 vs 胡
+// ---------------------------------------------------------------------------
+
+const EV_LATE_WALL = 10
+/** 自摸相对点炮的收益倍数（川麻自摸普遍加番，保守估计） */
+const EV_SELF_DRAW_MULTIPLIER = 2
+
+function matchEvDeclineHu(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const hu = myHuChoice(state, self)
+  if (hu === null)
+    return null
+  const wallLeft = state.wall.length
+  if (wallLeft > EV_LATE_WALL)
+    return null
+  const best = waitPlans(state.players[self], ctx.visible)[0]
+  const live = best?.live ?? 0
+  if (live <= 0)
+    return null
+  const drawChance = Math.min(1, live / Math.max(wallLeft, 1))
+  const huEv = hu.value
+  const passEv = drawChance * hu.value * EV_SELF_DRAW_MULTIPLIER
+  const seat = seatLabelOf(self, hu.sourcePlayer)
+  const passIsBetter = passEv > huEv
+  return {
+    windowKind: 'response',
+    headline: passIsBetter
+      ? `尾盘点炮 ${hu.value} 分：算 EV，放过自摸更划算`
+      : `尾盘点炮 ${hu.value} 分：算 EV，直接胡更稳`,
+    advice: `把账摆出来：现在胡 = ${hu.value} 分；放过 = 在 ${wallLeft} 张牌墙里摸到 ${live} 张有效牌` +
+      `（约 ${(drawChance * 100).toFixed(0)}%），自摸加番后期望约 ${passEv.toFixed(1)} 分。` +
+      (passIsBetter
+        ? `期望更高那条明明是放过，那就别急着把这一炮收了——用概率和期望来指导你的打法。`
+        : `摸到的概率已经掉下来了，这时候再赌自摸就是把期望扔了，直接胡。`),
+    evidence: [
+      `${seat}打出${tileLabel(hu.tile)}：点炮 ${hu.value} 分`,
+      `牌墙剩 ${wallLeft} 张；有效存活 ${live} 张 → 自摸概率约 ${(drawChance * 100).toFixed(0)}%`,
+      `EV 对比：胡 ${huEv.toFixed(1)} vs 放过 ${passEv.toFixed(1)}（自摸按 ${EV_SELF_DRAW_MULTIPLIER} 倍估）`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-NO-RELY-CROWDED-SUIT-v0：四家都要的门别抱指望
+// ---------------------------------------------------------------------------
+
+const CROWDED_MIN_MY_TILES = 5
+
+function matchNoRelyCrowdedSuit(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  if (state.players.some(p => p.dingque === null))
+    return null
+  const best = waitPlans(me, ctx.visible)[0]
+  if (best === undefined)
+    return null
+  const waitSuit = SUITS.find(s => best.waits.every(w => w.label.endsWith(s)))
+  if (waitSuit === undefined)
+    return null
+  if (collectorCount(state, waitSuit) < 4 || countSuit(me.hand, waitSuit) < CROWDED_MIN_MY_TILES)
+    return null
+  const others = SUITS.filter(s => s !== waitSuit && s !== me.dingque)
+  return {
+    windowKind: 'discard',
+    headline: `${waitSuit}门四家都要 → 别把希望压在${best.waits.map(w => w.label).join('/')}`,
+    advice: `你手上${waitSuit}看着有 ${countSuit(me.hand, waitSuit)} 张，但${waitSuit}是四家都要的门——` +
+      `外面三家都在收，${best.waits.map(w => w.label).join('、')} 这种张被截胡的概率极高，基本没有指望。` +
+      `别被「看着很多」骗了，改从${others.join('或')}门重新找下叫路线。`,
+    evidence: [
+      `收${waitSuit}门：4 家（无人缺该门）`,
+      `你手上${waitSuit} ${countSuit(me.hand, waitSuit)} 张，当前叫口全在${waitSuit}门`,
+      `存活张 ${best.live} 张，但要和三家抢`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-SIMPLE-ROUTE-FIRST-v0：简单稳健路线优先于复杂推断
+// ---------------------------------------------------------------------------
+
+const SIMPLE_MIN_WAITS = 2
+const SIMPLE_MIN_LIVE = 3
+const COMPLEX_MAX_REMAINING = 2
+
+function matchSimpleRouteFirst(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const plans = waitPlans(state.players[self], ctx.visible)
+  const simple = plans.find(p => p.waits.length >= SIMPLE_MIN_WAITS && p.live >= SIMPLE_MIN_LIVE)
+  if (simple === undefined)
+    return null
+  const complex = plans.find(p => p.waits.length === 1 && p.waits[0]?.remaining !== undefined
+    && (p.waits[0]?.remaining ?? 0) <= COMPLEX_MAX_REMAINING)
+  if (complex === undefined)
+    return null
+  const wait = complex.waits[0]
+  if (wait === undefined)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `与其深推${wait.label}，不如走${simple.waits.map(w => w.label).join('/')}的简单路线`,
+    advice: `你现在有两条路：一条是赌${wait.label}（只剩 ${wait.remaining} 张，要靠一串推断才敢押），` +
+      `一条是${simple.discard === null ? '不用改' : `打${tileLabel(simple.discard)}`}下` +
+      `${simple.waits.map(w => w.label).join('/')}（${simple.waits.length} 种叫、活 ${simple.live} 张）。` +
+      `后者多路且有量，属于「想明白也这么打、没想到也这么打」的稳妥路线，优先走它。` +
+      `不是说深推断没用——等简单路线的叫明显死透了，再去想复杂的那一套。`,
+    evidence: [
+      `复杂推断路线：${complex.discard === null ? '不打' : `打${tileLabel(complex.discard)}`} → ${wait.label}（剩 ${wait.remaining} 张）`,
+      `简单多路路线：${simple.discard === null ? '不打' : `打${tileLabel(simple.discard)}`} → ${simple.waits.map(w => w.label).join('/')}（活 ${simple.live} 张）`,
+      `判据：单吊剩 ≤${COMPLEX_MAX_REMAINING} 张时，简单路线优先`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-MAX-LIVE-WAIT-v0：改叫时选存活张最多的叫口
+// ---------------------------------------------------------------------------
+
+const MAX_LIVE_MIN_GAP = 2
+
+function matchMaxLiveWait(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const plans = waitPlans(state.players[self], ctx.visible)
+  const top = plans[0]
+  const second = plans[1]
+  if (top === undefined || second === undefined || top.live <= 0)
+    return null
+  const gap = top.live - second.live
+  if (gap < MAX_LIVE_MIN_GAP)
+    return null
+  const describeStr = (p: WaitPlan) =>
+    `${p.discard === null ? '不打' : `打${tileLabel(p.discard)}`} → ${p.waits.map(w => w.label).join('/')}（活 ${p.live} 张）`
+  return {
+    windowKind: 'discard',
+    headline: `同样能下叫：走活张最多的那条（多 ${gap} 张）`,
+    advice: `两条路线都能下叫，但存活张差 ${gap} 张，这不是「风格偏好」的差距，是数学差距。` +
+      `永远选存活张最多的叫口：${top.waits.map(w => w.label).join('/')}（活 ${top.live} 张）优于` +
+      `${second.waits.map(w => w.label).join('/')}（活 ${second.live} 张）。` +
+      `别因为「已经投入了」「刚才那手是这么打」就舍不得改口，也别用单局结果追认。`,
+    evidence: [
+      `推荐路线：${describeStr(top)}`,
+      `次优路线：${describeStr(second)}`,
+      `牌墙剩 ${state.wall.length} 张`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-SINGLE-LINE-ATTACK-v0：缺章优势 → 制定进攻思路
+// ---------------------------------------------------------------------------
+
+const SINGLE_LINE_MIN_TILES = 5
+
+function matchSingleLineAttack(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  if (me.dingque === null || state.players.some(p => p.dingque === null))
+    return null
+  const suit = SUITS.find(s => s !== me.dingque
+    && countSuit(me.hand, s) >= SINGLE_LINE_MIN_TILES
+    && collectorCount(state, s) === 1)
+  if (suit === undefined)
+    return null
+  return {
+    windowKind: 'any',
+    headline: `外面三家缺${suit} → ${suit}门必须转为进攻思路`,
+    advice: `${suit}门只有你一家收，其他三家都在打缺，等于整条${suit}子河都往你这儿灌。` +
+      `这种牌面别满足于「赶紧下叫跑路」，该按进攻思路打：优先把${suit}门里的对子腾出来碰、成型做坎，` +
+      `照着往大了做。反之，如果某门是三家在收，那才要切回「追下叫效率」的常规打法——这条必须反过来执行。`,
+    evidence: [
+      `收${suit}门：仅 1 家（你自己）`,
+      `你手上${suit} ${countSuit(me.hand, suit)} 张（≥ ${SINGLE_LINE_MIN_TILES}）`,
+      `缺章结构：${state.players.map(p => `${seatLabelOf(self, p.id)}${p.dingque === null ? '?' : `缺${p.dingque}`}`).join('、')}`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-BIGWAIT-COST-v0：做大牌前先算喂牌代价
+// ---------------------------------------------------------------------------
+
+const BIGWAIT_MIN_COLLECTORS = 3
+
+function matchBigwaitCost(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  if (state.players.some(p => p.dingque === null))
+    return null
+  const plans = waitPlans(me, ctx.visible)
+  const big = plans.find(p => p.waits.length === 1)
+  if (big === undefined)
+    return null
+  const wait = big.waits[0]
+  if (wait === undefined)
+    return null
+  const waitSuit = SUITS.find(s => wait.label.endsWith(s))
+  if (waitSuit === undefined || collectorCount(state, waitSuit) < BIGWAIT_MIN_COLLECTORS)
+    return null
+  const alternatives = plans.filter(p => p.waits.length >= 2 && p.live >= big.live)
+  if (alternatives.length === 0)
+    return null
+  const alt = alternatives[0]
+  if (alt === undefined)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `做大单钓${wait.label}的代价：先把${waitSuit}门喂出去了`,
+    advice: `要押${wait.label}做大牌，就得先拆${waitSuit}门的搭子—而${waitSuit}门有 ` +
+      `${collectorCount(state, waitSuit)} 家在收，你拆一张等于给三家送一份。还没等大牌做成，` +
+      `肥羊就放跑完了。相比之下${alt.waits.map(w => w.label).join('/')}的现成叫口也在那儿，` +
+      `宁可少番，先收了这一把再说。`,
+    evidence: [
+      `大牌路线：${big.discard === null ? '不打' : `打${tileLabel(big.discard)}`} → 单钓${wait.label}（活 ${big.live} 张）`,
+      `现成路线：${alt.discard === null ? '不打' : `打${tileLabel(alt.discard)}`} → ${alt.waits.map(w => w.label).join('/')}（活 ${alt.live} 张）`,
+      `喂牌代价：${waitSuit}门 ${collectorCount(state, waitSuit)} 家在收（≥ ${BIGWAIT_MIN_COLLECTORS}）`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-COUNTER-BIG-DANDIAO-v0：对手单钓 → 走大对子多路压制
+// ---------------------------------------------------------------------------
+
+const COUNTER_MIN_PAIRS = 3
+
+function matchCounterBigDandiao(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const threat = bigHandThreat(state, self)
+  if (threat === null)
+    return null
+  const me = state.players[self]
+  const pairs = pairsOf(me.hand)
+  if (pairs.length < COUNTER_MIN_PAIRS)
+    return null
+  const tp = state.players[threat]
+  const seat = seatLabelOf(self, threat)
+  const resources = pairs.length + me.melds.length
+  return {
+    windowKind: 'discard',
+    headline: `${seat}在赌大单钓 → 你手上 ${pairs.length} 对，改做大对子多路压他`,
+    advice: `${seat}副露已成型，路线基本是单钓大牌，叫口窄要靠你自己送上。对付这种牌,` +
+      `最硬的办法不是躲，而是改走大对子：你手上已经是 ${pairs.map(p => tileLabel(p.tile)).join('、')} 这些活对子，` +
+      `碰出一个就多一个叫口，做成多路以后他自己必点——手上全是活对子的时候，做大对就是压制大单钓最好的办法。` +
+      `注意别为了躲他把少一番的张先打了（比如为了安全打掉中张），那不是这里的正确解。`,
+    evidence: [
+      `${seat}副露 ${tp.melds.length} 副（${dominantMeldSuit(tp.melds)?.type ?? '分散'}门）→ 大牌路线`,
+      `你的对子：${pairs.map(p => tileLabel(p.tile)).join('、')}（${pairs.length} 对）`,
+      `可用资源：对子 ${pairs.length} + 已有副露 ${me.melds.length} = ${resources}`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-LAW-TWO-NO-WAIT-v0：两家不要就下这个叫
+// ---------------------------------------------------------------------------
+
+/** 两三家不要就该顺着下；活张差距超过这个值就不强变 */
+const TWO_NO_WAIT_MAX_LIVE_LOSS = 1
+
+function matchLawTwoNoWait(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  if (me.dingque === null || state.players.some(p => p.dingque === null))
+    return null
+  const plans = waitPlans(me, ctx.visible)
+  const top = plans[0]
+  if (top === undefined)
+    return null
+  for (const suit of SUITS) {
+    if (suit === me.dingque || collectorCount(state, suit) > 2)
+      continue
+    const better = plans.find(p => p.waits.some(w => w.label.endsWith(suit)) && p.live >= top.live - TWO_NO_WAIT_MAX_LIVE_LOSS)
+    if (better === undefined)
+      continue
+    if (top.waits.every(w => w.label.endsWith(suit)))
+      continue
+    return {
+      windowKind: 'discard',
+      headline: `${suit}门只有 ${collectorCount(state, suit)} 家要 → 把叫换到${suit}方向`,
+      advice: `破第一条习惯：能够变叫的时候，尽量把叫朝着「两家不要」的方向去下。` +
+        `${suit}门现在只有 ${collectorCount(state, suit)} 家在收，等于对你开放；` +
+        `而且这里也能下叫（${better.waits.map(w => w.label).join('/')}，活 ${better.live} 张），` +
+        `不至于为了变叫把牌打残。当然要根据牌面尽力为之——如果变叫之后胡张很薄、或者被杠断，就别强行变。`,
+      evidence: [
+        `收${suit}门：${collectorCount(state, suit)} 家（≤2 → 「两家不要」成立）`,
+        `可行路线：${better.discard === null ? '不打' : `打${tileLabel(better.discard)}`} → ${better.waits.map(w => w.label).join('/')}（活 ${better.live} 张）`,
+        `当前路线：${top.waits.map(w => w.label).join('/')}（活 ${top.live} 张）`,
+      ],
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-DROP-FUTURE-RISK-v0：留久成祸的张要早打
+// ---------------------------------------------------------------------------
+
+const FUTURE_RISK_MIN_DISCARDS = 6
+const FUTURE_RISK_MAX_REMAINING = 2
+
+function matchDropFutureRisk(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const base = 13 - me.melds.length * 3
+  if (me.hand.length !== base + 1)
+    return null
+  const iso = uniqueTiles(isolatedTiles(me.hand))
+  for (const tile of iso) {
+    const remaining = 4 - seenCount(state, tile.type, tile.value) - countSuit(me.hand.filter(t => sameTile(t, tile)), tile.type)
+    if (remaining > FUTURE_RISK_MAX_REMAINING)
+      continue
+    // 有对手在收这门（不缺且几乎不打这门）→ 他很可能把这个隐患摸成对
+    for (const id of opponentsOf(self)) {
+      const p = state.players[id]
+      if (p.dingque === tile.type || p.discards.length < FUTURE_RISK_MIN_DISCARDS)
+        continue
+      if (countSuit(p.discards, tile.type) > 1)
+        continue
+      const seat = seatLabelOf(self, id)
+      return {
+        windowKind: 'discard',
+        headline: `${tileLabel(tile)}留久了成祸：${seat}在收${tile.type}，早打`,
+        advice: `${tileLabel(tile)}在你手上是张孤张，自己基本不上；而${seat}明显在收${tile.type}` +
+          `（他已打 ${p.discards.length} 张，${tile.type}门只弃了 ${countSuit(p.discards, tile.type)} 张）。` +
+          `这种「我自己不好上、别人摸成对就反过来打我」的张，留久了反而成祸患——趁现在墙里还剩不多，` +
+          `早点打掉，把位置留给质量更好的搭子方向。`,
+        evidence: [
+          `${tileLabel(tile)}是孤张，墙里最多剩 ${remaining} 张`,
+          `${seat}弃牌 ${p.discards.length} 张、其中${tile.type}门仅 ${countSuit(p.discards, tile.type)} 张 → 在收该门`,
+        ],
+      }
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-PAIR-COUNT-DOWN-v0：不做七对时对子多是负担
+// ---------------------------------------------------------------------------
+
+const TOO_MANY_PAIRS = 4
+const TOO_MANY_PAIRS_CONCEALED = 5
+
+function matchPairCountDown(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const pairs = pairsOf(me.hand)
+  // 有副露就肯定不是七对；无副露则要求对子多到很难走七对
+  const overloaded = me.melds.length > 0 ? pairs.length >= TOO_MANY_PAIRS : pairs.length >= TOO_MANY_PAIRS_CONCEALED
+  if (!overloaded)
+    return null
+  const best = waitPlans(me, ctx.visible)[0]
+  return {
+    windowKind: 'discard',
+    headline: `手上 ${pairs.length} 对又不是做七对 → 对子是负担，该拆`,
+    advice: `不做七对的时候，对子多了并不是好事。你现在 ${pairs.map(p => tileLabel(p.tile)).join('、')}` +
+      `共 ${pairs.length} 对，整手牌被占掉了 ${pairs.length * 2} 张位置，结果是下不去叫也躲不开外面的大牌。` +
+      `目标要明确：为了尽早下叫、躲过外面的大牌，该拆的对子就得拆。` +
+      (best === undefined ? '' : `当前最佳叫口活张仅 ${best.live} 张，正是对子占位的代价。`),
+    evidence: [
+      `对子：${pairs.map(p => tileLabel(p.tile)).join('、')}（${pairs.length} 对）`,
+      `已有副露 ${me.melds.length} 副${me.melds.length === 0 ? '（仍可走七对，但对子已超阈值）' : '（已不能走七对）'}`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-CHOOSE-PAIR-TO-BREAK-v0：拆对四判据
+// ---------------------------------------------------------------------------
+
+const CHOOSE_PAIR_MIN = 4
+
+function matchChoosePairToBreak(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const pairs = pairsOf(me.hand)
+  if (pairs.length < CHOOSE_PAIR_MIN)
+    return null
+  // 判据②：生张边张（幺九）最难碰出/最难成坎 → 优先拆；没有边张对时才谈拆中张
+  const ranked = pairs
+    .map(p => ({
+      tile: p.tile,
+      edge: p.tile.value === 1 || p.tile.value === 9,
+      seen: seenCount(state, p.tile.type, p.tile.value),
+    }))
+    .sort((a, b) => Number(b.edge) - Number(a.edge) || b.seen - a.seen)
+  const victim = ranked[0]
+  if (victim === undefined || !victim.edge)
+    return null
+  // 该对必须与手牌其余部分没有联动（同门 ±2 内没有别的张）：联动着的中张对先不动
+  const interacts = me.hand.some(t =>
+    t.type === victim.tile.type && !sameTile(t, victim.tile) && Math.abs(t.value - victim.tile.value) <= 2)
+  if (interacts)
+    return null
+  const keep = ranked[ranked.length - 1]
+  if (keep === undefined)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `必须拆一对时：先拆${tileLabel(victim.tile)}，别因为「它安全」舍不得`,
+    advice: `拆对不是挑最危险的张打——虽然${tileLabel(victim.tile)}看着危险（${victim.edge ? '幺九边张' : '生张'}、河里才 ${victim.seen} 张），` +
+      `但正因为难上，它才是最该拆的——要用它碰出或摸成坎的概率最低。` +
+      `四条判据记牢：① 先锁死那些「极大概率能碰」的对；② 生张边张最容易崩对，优先拆；` +
+      `③ 对手在做七对时，他摸不上来的张早晚会打出来，那类对反而可以留；` +
+      `④ 别因为「这张打出去安全」就拆错对——安全不等于正确。`,
+    evidence: [
+      `候选对：${ranked.map(r => `${tileLabel(r.tile)}(河里${r.seen}张${r.edge ? '，幺九边张' : ''})`).join('、')}`,
+      `建议开刀：${tileLabel(victim.tile)}；锁死保留：${tileLabel(keep.tile)}`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-HIGH-DEEP-NO-UP-v0：高张太深就别指望上高张
+// ---------------------------------------------------------------------------
+
+const HIGH_VALUES = [7, 8, 9] as const
+const LOW_VALUES = [1, 2, 3] as const
+/** 开局大家还没打牌，所有牌都「一张未现」——那不是深，是没信息 */
+const HIGH_DEEP_MIN_DISCARDS = 12
+
+function matchHighDeepNoUp(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const totalDiscards = state.players.reduce((n, p) => n + p.discards.length, 0)
+  if (totalDiscards < HIGH_DEEP_MIN_DISCARDS)
+    return null
+  const best = waitPlans(me, ctx.visible)[0]
+  if (best === undefined)
+    return null
+  for (const suit of SUITS) {
+    const waitHigh = best.waits.filter(w => w.label.endsWith(suit) && HIGH_VALUES.some(v => v === Number(w.label.charAt(0))))
+    if (waitHigh.length === 0)
+      continue
+    if (HIGH_VALUES.some(v => seenCount(state, suit, v) > 0))
+      continue
+    const lowTiles = me.hand.filter(t => t.type === suit && LOW_VALUES.some(v => v === t.value))
+    if (lowTiles.length < 2)
+      continue
+    return {
+      windowKind: 'discard',
+      headline: `${suit}门七八九张一张都没出来 → 别指望上${waitHigh.map(w => w.label).join('/')}`,
+      advice: `桌面上的${suit}高张非常深：7、8、9 一张都没露面，说明不是没人要，是全被人捏在手里。` +
+        `你指望摸${waitHigh.map(w => w.label).join('或')}来下叫，等于在等人施舍。改走低张方向，` +
+        `再利用一下骗张——比如打掉同门的高张，说不定还能把对手捏着的${waitHigh.map(w => w.label).join('/')}骗出来。`,
+      evidence: [
+        `${suit}门 7/8/9 河里现 0 张 → 高张深度极高`,
+        `当前叫口依赖高张：${waitHigh.map(w => w.label).join('、')}`,
+        `手上${suit}门低张 ${lowTiles.map(tileLabel).join('、')}（可改走低张路线）`,
+      ],
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-NO-ARMS-RACE-v0：多家做大时不加入军备竞赛
+// ---------------------------------------------------------------------------
+
+const ARMS_RACE_MIN_PLAYERS = 2
+/** 自己也明确在押某一门（手上该门不少于这么多张）才算「有做大牌的念头」 */
+const ARMS_RACE_MIN_MY_TILES = 6
+
+function matchNoArmsRace(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const bigs = opponentsOf(self).filter(id => {
+    const p = state.players[id]
+    if (p.hasWon)
+      return false
+    const dom = dominantMeldSuit(p.melds)
+    return dom !== null && dom.count >= 2
+  })
+  if (bigs.length < ARMS_RACE_MIN_PLAYERS)
+    return null
+  const mySuit = SUITS.find(s => countSuit(me.hand, s) >= ARMS_RACE_MIN_MY_TILES)
+  if (mySuit === undefined)
+    return null
+  const seats = bigs.map(id => seatLabelOf(self, id)).join('、')
+  return {
+    windowKind: 'any',
+    headline: `${seats}都在做大牌 → 别加入军备竞赛，转稳健下叫`,
+    advice: `${bigs.length} 家已经摆明了做大牌（${bigs.map(id => `${seatLabelOf(self, id)}砸${dominantMeldSuit(state.players[id].melds)?.type ?? '?'}门`).join('、')}），` +
+      `这时候你手上${mySuit}再有 ${countSuit(me.hand, mySuit)} 张也别去拼什么${mySuit}清一色了——` +
+      `军备竞赛里慢一步就是炮台：人家速度和番型都在你前面，你还没成型就先要喂牌给别人。` +
+      `除非你的关键张极早到位（起手就差一张的程度），否则放弃大牌路线，老老实实追下叫。`,
+    evidence: [
+      `已做大牌：${seats}（各 ≥2 副同门副露）`,
+      `你的潜在路线：${mySuit}门 ${countSuit(me.hand, mySuit)} 张（≥ ${ARMS_RACE_MIN_MY_TILES}）`,
+      `牌墙剩 ${state.wall.length} 张`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-QING-TRAP-v0：清一色陷阱，先算必备张存活
+// ---------------------------------------------------------------------------
+
+const QING_TRAP_MIN_TILES = 8
+const QING_TRAP_MAX_LIVE = 1
+/** 开局就说「做不成」是伪判断：至少等各家打过一轮牌再谈关键张被绝 */
+const QING_TRAP_MIN_DISCARDS = 12
+
+function matchQingTrap(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const base = 13 - me.melds.length * 3
+  if (me.hand.length !== base + 1)
+    return null
+  const totalDiscards = state.players.reduce((n, p) => n + p.discards.length, 0)
+  if (totalDiscards < QING_TRAP_MIN_DISCARDS)
+    return null
+  const suit = SUITS.find(s => s !== me.dingque && countSuit(me.hand, s) >= QING_TRAP_MIN_TILES)
+  if (suit === undefined)
+    return null
+  const best = waitPlans(me, ctx.visible)[0]
+  const live = best?.live ?? 0
+  if (live > QING_TRAP_MAX_LIVE)
+    return null
+  const deadWaits = (best?.waits ?? []).filter(w => w.remaining === 0)
+  return {
+    windowKind: 'discard',
+    headline: `${suit}门 ${countSuit(me.hand, suit)} 张在手：这副清一色做出来是给大家看的`,
+    advice: `陷阱在这儿：做${suit}清一色需要连摸好几个关键张，而现在这些张要么已经被打绝、` +
+      `要么全绝在你自己手上（你自己占着，别人没法喂你）。当前最佳叫口只剩 ${live} 张，` +
+      (deadWaits.length > 0 ? `其中${deadWaits.map(w => w.label).join('、')}已经完全死掉。` : '') +
+      `这种情况下再做下去，做出来就是给大家看的——趁早转稳健路线，先把下叫落实了。`,
+    evidence: [
+      `手上${suit}门 ${countSuit(me.hand, suit)} 张（≥ ${QING_TRAP_MIN_TILES} 属伪装性的「看着能做」）`,
+      `当前最佳叫口活张仅 ${live} 张（≤ ${QING_TRAP_MAX_LIVE}）`,
+      `牌墙剩 ${state.wall.length} 张`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-EXPECT-MINDSET-v0：期望收益意识，结果不改打法
+// ---------------------------------------------------------------------------
+
+const EXPECT_MINDSET_EVENT_WINDOW = 12
+
+function matchExpectMindset(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  if (!iJustPassedWin(state, self, EXPECT_MINDSET_EVENT_WINDOW))
+    return null
+  const best = waitPlans(state.players[self], ctx.visible)[0]
+  return {
+    windowKind: 'any',
+    headline: '刚放的那手：别让结果改了你的打法',
+    advice: `你刚刚过了一张可以做的事——现在最危险的是下一张牌开始后悔。` +
+      `打牌必须有期望收益意识：当时按概率和期望做出的选择是对的，就算这一局被结果打了脸，` +
+      `下一次同样的局面还是要这么打。改用长期进分来衡量，而不是用单局的输赢追认。` +
+      (best === undefined ? '' : ` 现在这一手，按期望仍然是${best.waits.map(w => w.label).join('/')}（活 ${best.live} 张）这条路更划算。`),
+    evidence: [
+      '检测到你刚刚放过一次和牌机会（passed_win）',
+      '触发期望收益提醒：按长期主义执行，不追认单局结果',
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-NO-ZHANG-PLAN-v0：不上牌时，下叫优先并兼顾防守
+// ---------------------------------------------------------------------------
+
+const NO_ZHANG_MIN_ISO = 3
+const NO_ZHANG_MAX_LIVE = 2
+
+function matchNoZhangPlan(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  const best = waitPlans(me, ctx.visible)[0]
+  const live = best?.live ?? 0
+  if (live > NO_ZHANG_MAX_LIVE)
+    return null
+  const iso = uniqueTiles(isolatedTiles(me.hand))
+  if (iso.length < NO_ZHANG_MIN_ISO)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `摸不上牌（孤张 ${iso.length} 张、活张 ${live}）→ 重估单牌搭子取舍`,
+    advice: `这局你明显在打「卡」：孤张有 ${iso.map(tileLabel).join('、')}，最佳叫口只剩 ${live} 张。` +
+      `这种局面要把注意力放在两件事上：一是单牌和搭子到底怎么取舍，尽量提高下叫机会；` +
+      `二是别因为自己不上牌就全不管别人——盯着对手的牌河，别让别家轻易坐大。`,
+    evidence: [
+      `孤张：${iso.map(tileLabel).join('、')}（${iso.length} 张 ≥ ${NO_ZHANG_MIN_ISO}）`,
+      `最佳叫口活张 ${live} 张（≤ ${NO_ZHANG_MAX_LIVE}）`,
+      `牌墙剩 ${state.wall.length} 张`,
+    ],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-DROP-DEAD-PAIR-v0：死对先打别舍不得
+// ---------------------------------------------------------------------------
+
+const DEAD_PAIR_NEWS_WINDOW = 8
+
+/** 最近 n 个事件里这张牌是否刚露过面——用来判断「刚成为死对」，避免每回合重复提醒 */
+function tileAppearedRecently(state: GameState, tile: TileInstance, within: number): boolean {
+  const start = Math.max(0, state.events.length - within)
+  for (let i = state.events.length - 1; i >= start; i--) {
+    const ev = state.events[i]
+    if (ev === undefined)
+      continue
+    if (ev.type === 'tile_discarded' && sameTile(ev.tile, tile))
+      return true
+    if (ev.type === 'meld_declared' && ev.meld.tiles.some(t => sameTile(t, tile)))
+      return true
+  }
+  return false
+}
+
+function matchDropDeadPair(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  for (const pair of pairsOf(me.hand)) {
+    const mine = me.hand.filter(t => sameTile(t, pair.tile)).length
+    const remaining = 4 - seenCount(state, pair.tile.type, pair.tile.value) - mine
+    if (remaining > 0)
+      continue
+    // 只在「刚刚绝」的时候提醒一次：之后每回合都喊一遍就成了噪音
+    if (!tileAppearedRecently(state, pair.tile, DEAD_PAIR_NEWS_WINDOW))
+      continue
+    const best = waitPlans(me, ctx.visible)[0]
+    return {
+      windowKind: 'discard',
+      headline: `${tileLabel(pair.tile)}已经是死对 → 早点打掉腾位置`,
+      advice: `${tileLabel(pair.tile)}墙里再没有了（你自己 ${mine} 张 + 桌上已现 ${seenCount(state, pair.tile.type, pair.tile.value)} 张 = 4），` +
+        `留着只能占两个位置、等不到第三次。死锁的对先打掉，把位置腾给还活着的方向。` +
+        (best === undefined ? '' : ` 顺便留意：你当前的叫口是${best.waits.map(w => w.label).join('/')}，` +
+          `如果哪张胡张也被打绝了，要随时准备换叫。`),
+      evidence: [
+        `${tileLabel(pair.tile)}：你手上 ${mine} 张 + 已现 ${seenCount(state, pair.tile.type, pair.tile.value)} 张 = 4 张全部锁定`,
+      ],
+    }
+  }
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // 规则执行器注册表（新归纳规则需「可判定化」后在此登记，宁缺毋滥）
 // ---------------------------------------------------------------------------
 
@@ -850,6 +1787,29 @@ const RULE_EXECUTORS: ReadonlyArray<{ ruleId: string, run: RuleExecutor }> = [
   { ruleId: 'R-ESCAPE-SWITCH-SUIT-v0', run: matchEscapeSwitchSuit },
   { ruleId: 'R-SET-BOTTOM-LINE-v0', run: matchSetBottomLine },
   { ruleId: 'R-EARLY-SAFE-DISCARD-v0', run: matchEarlySafeDiscard },
+  // 第二批改判定化：期望 / 选叫 / 对子取舍 / 心态
+  { ruleId: 'R-THREAT-ESCAPE-v0', run: matchThreatEscape },
+  { ruleId: 'R-KEEP-LIVE-v0', run: matchKeepLive },
+  { ruleId: 'R-CHECK-DINGQUE-BEFORE-PONG-v0', run: matchCheckDingqueBeforePong },
+  { ruleId: 'R-BIGDANDIAO-VS-XIAJIAO-v0', run: matchBigdandiaoVsXiajiao },
+  { ruleId: 'R-ZIMO-OR-NOTHING-v0', run: matchZimoOrNothing },
+  { ruleId: 'R-EV-DECLINE-HU-v0', run: matchEvDeclineHu },
+  { ruleId: 'R-NO-RELY-CROWDED-SUIT-v0', run: matchNoRelyCrowdedSuit },
+  { ruleId: 'R-SIMPLE-ROUTE-FIRST-v0', run: matchSimpleRouteFirst },
+  { ruleId: 'R-MAX-LIVE-WAIT-v0', run: matchMaxLiveWait },
+  { ruleId: 'R-SINGLE-LINE-ATTACK-v0', run: matchSingleLineAttack },
+  { ruleId: 'R-BIGWAIT-COST-v0', run: matchBigwaitCost },
+  { ruleId: 'R-COUNTER-BIG-DANDIAO-v0', run: matchCounterBigDandiao },
+  { ruleId: 'R-LAW-TWO-NO-WAIT-v0', run: matchLawTwoNoWait },
+  { ruleId: 'R-DROP-FUTURE-RISK-v0', run: matchDropFutureRisk },
+  { ruleId: 'R-PAIR-COUNT-DOWN-v0', run: matchPairCountDown },
+  { ruleId: 'R-CHOOSE-PAIR-TO-BREAK-v0', run: matchChoosePairToBreak },
+  { ruleId: 'R-HIGH-DEEP-NO-UP-v0', run: matchHighDeepNoUp },
+  { ruleId: 'R-NO-ARMS-RACE-v0', run: matchNoArmsRace },
+  { ruleId: 'R-QING-TRAP-v0', run: matchQingTrap },
+  { ruleId: 'R-EXPECT-MINDSET-v0', run: matchExpectMindset },
+  { ruleId: 'R-NO-ZHANG-PLAN-v0', run: matchNoZhangPlan },
+  { ruleId: 'R-DROP-DEAD-PAIR-v0', run: matchDropDeadPair },
 ]
 
 /**
@@ -860,11 +1820,23 @@ const RULE_EXECUTORS: ReadonlyArray<{ ruleId: string, run: RuleExecutor }> = [
 const SUPPRESSED_BY: Readonly<Record<string, readonly string[]>> = {
   'R-ESCAPE-AVOID-BIG-v0': ['R-ESCAPE-SWITCH-SUIT-v0'],
   'R-REBUILD-HAND-FROM-MELDS-v0': ['R-READ-BIG-DANDIAO-v0'],
+  // 同一局面只会有一条「选叫」建议：更具体的那条压住通用的那条
+  'R-MAX-LIVE-WAIT-v0': ['R-BIGDANDIAO-VS-XIAJIAO-v0'],
+  'R-ENUM-PROB-CHOICE-v0': ['R-BIGDANDIAO-VS-XIAJIAO-v0'],
+  'R-SIMPLE-ROUTE-FIRST-v0': ['R-MAX-LIVE-WAIT-v0'],
+  // 放一手的三部曲：有大牌威胁最具体，尾盘 EV 次之，通用底线垫底
+  'R-SET-BOTTOM-LINE-v0': ['R-ZIMO-OR-NOTHING-v0', 'R-EV-DECLINE-HU-v0', 'R-THREAT-ESCAPE-v0'],
+  'R-ZIMO-OR-NOTHING-v0': ['R-THREAT-ESCAPE-v0', 'R-EV-DECLINE-HU-v0'],
+  // 对子取舍：给出「拆哪一对」后就不再重复喊「对子多了」
+  'R-PAIR-COUNT-DOWN-v0': ['R-CHOOSE-PAIR-TO-BREAK-v0'],
+  // 早管一张的事：死锁对优先于通用「早打孤张」
+  'R-DROP-FUTURE-RISK-v0': ['R-DROP-DEAD-PAIR-v0'],
+  'R-EARLY-SAFE-DISCARD-v0': ['R-DROP-DEAD-PAIR-v0'],
 }
 
 /**
  * 一次最多返回的「决策类」建议（碰/胡/出牌这类要你立刻做动作的）。
- * 宁缺毋滥：镜像导师不抢朱扬教练的主决策权。
+ * 宁缺毋滥：镜像导师不抢破晓哥教练的主决策权。
  */
 export const MAX_DECISION_ADVICE = 3
 
@@ -882,8 +1854,8 @@ export interface AdviceOptions {
 }
 
 /**
- * 主入口：对一局公开可见状态，返回命中的潇老师镜像建议。
- * - 未命中返回空数组（保持安静，不干预朱扬教练的主建议）
+ * 主入口：对一局公开可见状态，返回命中的破晓哥镜像建议。
+ * - 未命中返回空数组（保持安静，不干预破晓哥教练的主建议）
  * - 决策类（response/discard）与观察类（any）分开限流，各自按置信度降序截断
  */
 export function buildXiaoshiAdvice(

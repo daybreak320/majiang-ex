@@ -5,6 +5,7 @@ import { createInitialGame } from '../game/core'
 import { chooseAICommand } from '../game/ai'
 import { executeCommand } from '../game/engine'
 import { buildXiaoshiAdvice } from './xiaoshiAdvisor'
+import { XIAOSHI_RULES } from './xiaoshiRules'
 
 describe('规则触发频率探针', () => {
   it('统计 20 局', () => {
@@ -49,11 +50,8 @@ describe('规则触发频率探针', () => {
     for (const [id, n] of rows) {
       console.log(`${id.padEnd(34)} ${String(n).padStart(5)}  ${(n / steps * 100).toFixed(2)}%`)
     }
-    console.log('未触发规则：', [
-      'R-RIVER-INFER-v0', 'R-DROP-CALL-v0', 'R-REBUILD-HAND-FROM-MELDS-v0', 'R-READ-BIG-DANDIAO-v0',
-      'R-INFO-TWO-COLLECT-v0', 'R-DEPTH-JUDGE-v0', 'R-NOREACTION-INFO-v0', 'R-ENUM-PROB-CHOICE-v0',
-      'R-FUTURE-WAIT-DEAD-v0', 'R-INFER-BEFORE-PONG-v0', 'R-ESCAPE-AVOID-BIG-v0', 'R-ESCAPE-SWITCH-SUIT-v0',
-      'R-SET-BOTTOM-LINE-v0', 'R-EARLY-SAFE-DISCARD-v0',
-    ].filter(id => freq[id] === undefined).join(', ') || '（无）')
+    const allRuleIds = XIAOSHI_RULES.map(r => r.id)
+    console.log(`覆盖 ${Object.keys(freq).length}/${allRuleIds.length} 条规则`)
+    console.log('未触发规则：', allRuleIds.filter(id => freq[id] === undefined).join(', ') || '（无）')
   })
 })

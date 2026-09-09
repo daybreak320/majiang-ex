@@ -1,4 +1,4 @@
-// 潇老师实战决策库 · 归纳规则库（跨期归纳产物）
+// 破晓哥实战决策库 · 归纳规则库（跨期归纳产物）
 // ⚠️ 由 xiaolaoshi/tools/sync_knowledge.py 同步生成，勿手改
 // 规则 = trigger(局面) + action(行动) + rationale(金句) + boundary(边界) + evidence(案例证据)
 // 约定：单期证据 confidence ≤ 0.85；跨期 ≥3 期复现才可升至 0.9+。

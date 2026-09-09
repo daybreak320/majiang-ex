@@ -130,7 +130,7 @@ describe('结算页投影', () => {
     expect(recommendTraining([{ ...base, issues: [{ kind: 'tileEfficiency', title: '路线变窄', actual: '打4筒', recommended: '打9万', reason: '活张更少' }] }])?.kind).toBe('endgame-count')
   })
 
-  it('近三局历史摘要使用朱扬理论报告并记录评估版本', () => {
+  it('近三局历史摘要使用破晓哥理论报告并记录评估版本', () => {
     const state = createInitialGame(12)
     state.phase = 'finished'
     state.endReason = 'wall_empty'
