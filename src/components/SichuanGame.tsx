@@ -235,10 +235,10 @@ function EndgameDefensePanel({ state }: { state: GameState }) {
   if (!inference.active)
     return null
   return (
-    <aside className="endgame-defense-panel" aria-label="尾盘公开信息猜牌">
+    <aside className="endgame-defense-panel" aria-label="响哥警钟">
       <header className="endgame-defense-heading">
         <div>
-          <span className="eyebrow">尾盘防守 · 公开信息猜牌</span>
+          <span className="eyebrow">响哥警钟 · 尾盘公开信息猜牌</span>
           <h3>牌墙剩 {inference.wallTiles} 张：按“不能花猪、要争取听牌”推演</h3>
         </div>
         <p>{inference.premise}</p>
@@ -284,7 +284,7 @@ function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedT
       )}
       {pengLesson !== null && (
         <button className={`peng-coach-toggle coach-${pengLesson.verdict}`} onClick={() => { setShowPengLesson(current => !current); setShowHuLesson(false) }}>
-          {showPengLesson ? '返回当前讲解' : `碰 ${analysis.pengCandidate!.tile.value}${analysis.pengCandidate!.tile.type} · 查看碰或过分析`}
+          {showPengLesson ? '返回当前讲解' : `查看 ${analysis.pengCandidate!.tile.value}${analysis.pengCandidate!.tile.type} 的碰或过分析`}
         </button>
       )}
       <div className="assistant-overview">
@@ -823,10 +823,10 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   const [error, setError] = useState<string | null>(null)
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null)
   const [paused, setPaused] = useState(false)
-  // 专项训练默认开启导师，实战模式仍由玩家自行决定是否打开。
-  const [assistantEnabled, setAssistantEnabled] = useState(() => trainingKind !== undefined)
-  // 敲破黑板导师：默认开启，随局面命中规则才出声，可随时关掉。
-  const [xiaoshiEnabled, setXiaoshiEnabled] = useState(true)
+  // 三项讲解功能均默认关闭，玩家可按需独立开启。
+  const [assistantEnabled, setAssistantEnabled] = useState(false)
+  const [xiaoshiEnabled, setXiaoshiEnabled] = useState(false)
+  const [endgameEnabled, setEndgameEnabled] = useState(false)
   const [immediateFeedback, setImmediateFeedback] = useState<string | null>(null)
   const [skipToResult, setSkipToResult] = useState(false)
   const stateRef = useRef(state)
@@ -1065,18 +1065,26 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
           <label className="assistant-toggle">
             <input
               type="checkbox"
-              checked={assistantEnabled}
-              onChange={event => setAssistantEnabled(event.target.checked)}
-            />
-            <span>{trainingKind === undefined ? '晓算一下' : 'AI 导师'}</span>
-          </label>
-          <label className="assistant-toggle">
-            <input
-              type="checkbox"
               checked={xiaoshiEnabled}
               onChange={event => setXiaoshiEnabled(event.target.checked)}
             />
             <span>敲破黑板</span>
+          </label>
+          <label className="assistant-toggle">
+            <input
+              type="checkbox"
+              checked={assistantEnabled}
+              onChange={event => setAssistantEnabled(event.target.checked)}
+            />
+            <span>晓算一下</span>
+          </label>
+          <label className="assistant-toggle">
+            <input
+              type="checkbox"
+              checked={endgameEnabled}
+              onChange={event => setEndgameEnabled(event.target.checked)}
+            />
+            <span>响哥警钟</span>
           </label>
           {paused && <span className="turn-timer">已暂停</span>}
           {timedTraining && !paused && remainingSeconds !== null && (
@@ -1146,14 +1154,15 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
       )}
       <StrategicReminderPanel state={state} />
       {(() => {
-        const endgameActive = state.wall.length <= 16 && state.phase !== 'dingque'
+        const endgameActive = endgameEnabled && state.wall.length <= 16 && state.phase !== 'dingque'
         return (
-          <div className={`game-columns ${endgameActive ? 'endgame-active' : ''}`}>
-            {endgameActive && (
-              <div className="game-column game-left">
-                <EndgameDefensePanel state={state} />
-              </div>
-            )}
+          <>
+            <div className={`game-columns ${endgameActive ? 'endgame-active' : ''} ${xiaoshiEnabled ? 'with-left' : ''} ${assistantEnabled ? 'with-right' : ''}`}>
+              {xiaoshiEnabled && (
+                <div className="game-column game-left">
+                  <XiaoshiMentorPanel state={state} />
+                </div>
+              )}
             <div className="table-grid">
         {[1, 2, 3].map(id => <PlayerPanel key={id} state={state} playerId={id as PlayerId} thinking={thinking} />)}
         <section className="table-center">
@@ -1184,11 +1193,18 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
           submit={submit}
         />
         </div>
-            <div className="game-column game-right">
-              {(trainingKind !== undefined || assistantEnabled) && <AssistantPanel state={state} selectedTileId={selectedTileId} />}
-              {xiaoshiEnabled && <XiaoshiMentorPanel state={state} />}
+              {assistantEnabled && (
+                <div className="game-column game-right">
+                  <AssistantPanel state={state} selectedTileId={selectedTileId} />
+                </div>
+              )}
             </div>
-          </div>
+            {endgameActive && (
+              <div className="game-bottom-dock">
+                <EndgameDefensePanel state={state} />
+              </div>
+            )}
+          </>
         )
       })()}
 

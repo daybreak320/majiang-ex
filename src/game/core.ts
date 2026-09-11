@@ -344,6 +344,49 @@ function createRandomJingoudiaoTraining(seed: number, styles: readonly AIStyle[]
   }
   const wall = pool.splice(0, 10)
   const revealed = sortTiles(pool.splice(0))
+  // 候选单吊必须靠得住，否则“换听比较哪张更活”这道题就不成立：
+  //   ① 每张候选至少留 1 张活张（自己手里各持 1 张，牌河已见 3 张即全灭）；
+  //   ② 两张候选的活张数不能相同，否则题目没有唯一答案。
+  // 手段是从牌河捞回一张候选牌到牌墙，墙里换出一张非候选牌，保持 10/45 的配额。
+  const candidateValues: readonly number[] = candidates
+  const aliveCount = (value: number) =>
+    4 - revealed.filter(tile => tile.type === candidateSuit && tile.value === value).length - 1
+  const rescueIntoWall = (value: number): boolean => {
+    const rescuable = revealed.findIndex(tile => tile.type === candidateSuit && tile.value === value)
+    const displaced = wall.findIndex(tile => tile.type !== candidateSuit || !candidateValues.includes(tile.value))
+    if (rescuable < 0 || displaced < 0)
+      return false
+    const [rescued] = revealed.splice(rescuable, 1)
+    const [swapped] = wall.splice(displaced, 1)
+    wall.push(rescued)
+    revealed.push(swapped)
+    return true
+  }
+  const demoteToRiver = (value: number): boolean => {
+    if (aliveCount(value) < 2)
+      return false
+    const demotable = wall.findIndex(tile => tile.type === candidateSuit && tile.value === value)
+    const displaced = revealed.findIndex(tile => tile.type !== candidateSuit || !candidateValues.includes(tile.value))
+    if (demotable < 0 || displaced < 0)
+      return false
+    const [demoted] = wall.splice(demotable, 1)
+    const [swapped] = revealed.splice(displaced, 1)
+    revealed.push(demoted)
+    wall.push(swapped)
+    return true
+  }
+  for (const value of candidates) {
+    while (aliveCount(value) < 1 && rescueIntoWall(value)) {
+      // 补足活张直到这张候选不再全灭
+    }
+  }
+  if (aliveCount(candidates[0]) === aliveCount(candidates[1])) {
+    const pick = candidateValues[random.nextInt(candidateValues.length)]
+    // 优先把一张候选捞活；河里已无该牌时，退而把牌墙里的一张候选压进牌河。
+    if (!rescueIntoWall(pick))
+      demoteToRiver(pick)
+  }
+  revealed.sort(compareTiles)
   players[1].discards = revealed.slice(0, 15)
   players[2].discards = revealed.slice(15, 30)
   players[3].discards = revealed.slice(30, 45)

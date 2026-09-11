@@ -358,7 +358,21 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .event-route-explainer p { margin: 0; color: #c7e3dc; font-size: .8rem; line-height: 1.55; }
 .event-route-explainer small { color: #9fc6ba; font-size: .72rem; line-height: 1.5; }
 
-.game-columns { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 1720px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 22vw, 340px); gap: .8rem; align-items: start; overflow: clip; }.game-columns.endgame-active { grid-template-columns: clamp(260px, 20vw, 340px) minmax(0, 1fr) clamp(260px, 20vw, 340px); align-items: stretch; }.game-columns > .table-grid { min-width: 0; max-width: none; margin: 0; }.game-column { position: relative; z-index: 1; min-width: 0; min-height: 0; display: grid; gap: .6rem; align-content: start; overflow: hidden; }.game-left .endgame-defense-panel { max-height: none; overflow: visible; }.game-right .assistant-panel { max-width: none; width: 100%; margin: 0; }
+.game-columns { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 1720px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; align-items: start; overflow: clip; }.game-columns.endgame-active { align-items: stretch; }.game-columns > .table-grid { min-width: 0; max-width: none; margin: 0; }.game-column { position: relative; z-index: 1; min-width: 0; min-height: 0; display: grid; gap: .6rem; align-content: start; max-height: calc(100vh - 205px); overflow: hidden auto; overscroll-behavior: contain; }.game-right .assistant-panel { max-width: none; width: 100%; margin: 0; }
+/* 三区分工：左=敲破黑板，中=牌桌，右=晓算一下，响哥警钟移到画面下侧(.game-bottom-dock)。
+   列数按「实际开启的面板」决定，避免两个长文本面板挤在同一列互相顶掉、被 overflow 裁掉。 */
+.game-columns.with-left.with-right { grid-template-columns: clamp(224px, 17.5vw, 300px) minmax(0, 1fr) clamp(258px, 21vw, 340px); }
+.game-columns.with-left:not(.with-right) { grid-template-columns: clamp(224px, 17.5vw, 300px) minmax(0, 1fr); }
+.game-columns.with-right:not(.with-left) { grid-template-columns: minmax(0, 1fr) clamp(258px, 21vw, 340px); }
+/* 画面下侧的响哥警钟：横向铺开三个对手，限高内部滚动，不挤占牌桌 */
+.game-bottom-dock { flex: none; width: 100%; max-width: 1720px; margin: .7rem auto 0; }
+.game-bottom-dock .endgame-defense-panel { max-height: min(34vh, 330px); overflow: hidden auto; overscroll-behavior: contain; }
+.game-bottom-dock .endgame-defense-heading { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+.game-bottom-dock .endgame-opponents { grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); }
+/* 敲破黑板进左栏后：去掉原上边距，并让窄栏内的卡片头部/底部可换行，避免挤成一条 */
+.game-column .xiaoshi-panel { margin-top: 0; }
+.game-left .xiaoshi-card-head { row-gap: .3rem; }
+.game-left .xiaoshi-card footer { flex-wrap: wrap; row-gap: .3rem; }
 .endgame-defense-panel { display: grid; gap: .65rem; padding: .9rem; border: 1px solid #f4d48677; border-radius: 14px; background: linear-gradient(145deg, #352a13dd, #15140cdd); box-shadow: 0 10px 26px #0004; }
 .endgame-defense-heading { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.22fr); gap: 1rem; align-items: end; }.endgame-defense-heading > div { min-width: 0; display: grid; gap: .28rem; }.endgame-defense-heading h3 { margin: 0; overflow-wrap: anywhere; color: #fff1bd; font-size: 1rem; line-height: 1.4; }.endgame-defense-heading p { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #d7c99a; font-size: .76rem; line-height: 1.55; }
 .endgame-opponents { min-width: 0; display: grid; grid-template-columns: 1fr; gap: .55rem; }
@@ -373,7 +387,7 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 @media (max-width: 700px) { .endgame-defense-heading { grid-template-columns: 1fr; gap: .45rem; }.endgame-opponents { grid-template-columns: 1fr; }.player-id-card { align-items: stretch; flex-direction: column; }.player-id-entry { width: 100%; flex-basis: auto; grid-template-columns: 1fr; }.player-id-entry button { width: 100%; }.player-id-confirmed { white-space: normal; }.opportunity-section { padding: .75rem; }.opportunity-step { grid-template-columns: 34px minmax(0, 1fr); gap: .5rem; padding: .6rem; }.opportunity-step-rail { min-height: 100px; }.opportunity-step-copy p { font-size: .78rem; }.review-workbench { grid-template-columns: 1fr; }.workbench-replay { padding-top: .2rem; border-top: 1px solid #ffffff16; }.event-route-explainer { padding: .6rem; } }
 
 /* The compact layout rule must come after the shared desktop grid definition. */
-@media (max-width: 1199px) { .game-columns, .game-columns.endgame-active { grid-template-columns: minmax(0, 1fr); align-items: start; overflow: visible; }.game-columns > .table-grid { width: 100%; }.game-left { order: 2; }.game-right { order: 3; }.assistant-panel { grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); }.assistant-known { grid-column: 1 / -1; } }
+@media (max-width: 1199px) { .game-columns, .game-columns.endgame-active, .game-columns.with-left, .game-columns.with-right, .game-columns.with-left.with-right { grid-template-columns: minmax(0, 1fr); align-items: start; overflow: visible; }.game-columns > .table-grid { width: 100%; }.game-left { order: 2; }.game-right { order: 3; }.game-column { max-height: none; overflow: visible; }.game-bottom-dock .endgame-defense-panel { max-height: none; }.assistant-panel { grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr); }.assistant-known { grid-column: 1 / -1; } }
 
 @media (max-width: 380px) {
   :root { --tile-width: 39px; --tile-height: 56px; }

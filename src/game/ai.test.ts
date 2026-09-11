@@ -240,6 +240,8 @@ describe('ai 自动推进与整局模拟', () => {
     expect(advanceAIOnce(userTurn)).toEqual({ state: userTurn, command: null })
   })
 
+  // 12 局完整 AI 对局是全仓最重的测试；后台萃取产线常驻时会挤占 CPU，
+  // 默认 15s 不够用。放宽到 120s，断言本身不变。
   it('12 个固定 seed 均完整结束并保持事件、实体与分数不变量', () => {
     for (const seed of [1, 2, 3, 4, 5, 17, 42, 88, 96, 321, 960, 2026]) {
       const state = runAIGame(seed)
@@ -251,7 +253,7 @@ describe('ai 自动推进与整局模拟', () => {
       expect(new Set(ids)).toHaveLength(108)
       expect(state.players.reduce((sum, player) => sum + player.score, 0)).toBe(0)
     }
-  }, 10_000)
+  }, 120_000)
 
   it('模拟器在过低步数上限时抛出明确错误', () => {
     expect(() => runAIGame(1, 1)).toThrow('AI 对局超过最大步数 1（seed: 1）')

@@ -1441,21 +1441,32 @@ function matchDropFutureRisk(ctx: RuleContext): RuleHit | null {
     // 有对手在收这门（不缺且几乎不打这门）→ 他很可能把这个隐患摸成对
     for (const id of opponentsOf(self)) {
       const p = state.players[id]
-      if (p.dingque === tile.type || p.discards.length < FUTURE_RISK_MIN_DISCARDS)
+      // 定缺未清的对手没有选择权：前期弃牌被缺门占满，其它门弃得少是规则使然，
+      // 不能读成「在收某门」（2026-09-11 实测误报：定缺万者 10 弃 1 筒被判「在收筒」）。
+      // 只读他「清缺之后」打出的牌——最后一张缺门之后的弃牌才是真实取舍。
+      const dq = p.dingque
+      if (dq === null || dq === tile.type)
         continue
-      if (countSuit(p.discards, tile.type) > 1)
+      if (p.discards.length < FUTURE_RISK_MIN_DISCARDS)
+        continue
+      let lastQueIdx = -1
+      p.discards.forEach((t, i) => { if (t.type === dq) lastQueIdx = i })
+      const postClean = p.discards.slice(lastQueIdx + 1)
+      if (postClean.length < 3)
+        continue
+      if (countSuit(postClean, tile.type) > 0)
         continue
       const seat = seatLabelOf(self, id)
       return {
         windowKind: 'discard',
         headline: `${tileLabel(tile)}留久了成祸：${seat}在收${tile.type}，早打`,
-        advice: `${tileLabel(tile)}在你手上是张孤张，自己基本不上；而${seat}明显在收${tile.type}` +
-          `（他已打 ${p.discards.length} 张，${tile.type}门只弃了 ${countSuit(p.discards, tile.type)} 张）。` +
+        advice: `${tileLabel(tile)}在你手上是张孤张，自己基本不上；而${seat}清完缺门之后` +
+          `打出的 ${postClean.length} 张里，${tile.type}门一张没有——他在收${tile.type}。` +
           `这种「我自己不好上、别人摸成对就反过来打我」的张，留久了反而成祸患——趁现在墙里还剩不多，` +
           `早点打掉，把位置留给质量更好的搭子方向。`,
         evidence: [
           `${tileLabel(tile)}是孤张，墙里最多剩 ${remaining} 张`,
-          `${seat}弃牌 ${p.discards.length} 张、其中${tile.type}门仅 ${countSuit(p.discards, tile.type)} 张 → 在收该门`,
+          `${seat}清缺后已打 ${postClean.length} 张、${tile.type}门 0 张 → 在收该门`,
         ],
       }
     }

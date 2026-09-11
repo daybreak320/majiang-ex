@@ -629,3 +629,43 @@ describe('R-EXPECT-MINDSET-v0：期望收益意识，结果不改打法', () => 
     expect(hit!.headline).toContain('别让结果改了你的打法')
   })
 })
+
+describe('R-DROP-FUTURE-RISK-v0：留久成祸的张要早打', () => {
+  /**
+   * 造「自己 14 张、孤张 8筒（河里已见 2 张）」的局面；
+   * 下家（玩家 1）的定缺与弃牌由用例定制。
+   * 背景：2026-09-11 破晓实测误报——对手定缺万、被迫先打缺门，其它门弃得少
+   * 被判「在收筒」。修复口径：只读他清缺之后打出的牌。
+   */
+  function futureRiskGame(seed: number, opDiscards: string, opDingque: TileType) {
+    const { state, pool } = emptyGame(seed)
+    state.players[1].dingque = opDingque
+    state.players[1].discards = take(pool, opDiscards)
+    state.players[2].discards = take(pool, '8筒') // 河 8筒 ×2 → 自己的 8筒 墘里最多剩 1 张
+    state.players[3].discards = take(pool, '8筒')
+    state.players[0].hand = take(pool, '1万 2万 3万 4万 5万 6万 7万 8万 9万 1条 2条 3条 4条 8筒')
+    return { state }
+  }
+
+  it('对手还在清缺门时弃牌分布不可读 → 静默（误报回归）', () => {
+    // 定缺万 + 弃「万4 条2」：清缺后只打过 2 张，样本不足，不能断言他在收筒
+    const { state } = futureRiskGame(901, '1万 2万 3万 4万 5条 6条', '万')
+    expect(buildXiaoshiAdvice(state, 0).find(a => a.ruleId === 'R-DROP-FUTURE-RISK-v0')).toBeUndefined()
+  })
+
+  it('对手清缺后连打 3 张非筒且筒门 0 张 → 命中「在收筒」', () => {
+    // 定缺万 + 弃「万4 条3」：清缺后打了 3 张条、筒门 0 张 → 真实收筒信号
+    const { state } = futureRiskGame(902, '1万 2万 3万 4万 5条 6条 7条', '万')
+    const hit = buildXiaoshiAdvice(state, 0).find(a => a.ruleId === 'R-DROP-FUTURE-RISK-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('下家')
+    expect(hit!.headline).toContain('收筒')
+    expect(hit!.evidence.join('')).toContain('清缺后')
+  })
+
+  it('对手清缺后打过筒子 → 他没在收筒，静默', () => {
+    // 定缺万 + 弃「万4 条3 筒1」：清缺后打过 1 张筒 → 收筒前提不成立
+    const { state } = futureRiskGame(903, '1万 2万 3万 4万 5条 6条 7条 8筒', '万')
+    expect(buildXiaoshiAdvice(state, 0).find(a => a.ruleId === 'R-DROP-FUTURE-RISK-v0')).toBeUndefined()
+  })
+})
