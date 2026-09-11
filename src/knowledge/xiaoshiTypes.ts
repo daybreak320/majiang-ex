@@ -68,6 +68,11 @@ export interface DecisionCase {
   zhuyangAnchor?: string | null
   /** 学习态：用户冻结预测时的选择与分歧标签（学习库使用时填充） */
   learner?: { myChoice?: string; divergence?: string } | null
+  /**
+   * 素材出处（批量萃取卡专用）：可直接回看原片对应时间点复核。
+   * 早期 12 期卡由 SOURCE_EPISODES 承载期级出处，此字段为 null。
+   */
+  source?: { videoId: string; title: string; t: number } | null
 }
 
 /** 归纳规则：可被训练引擎直接消费的最小单元 */
