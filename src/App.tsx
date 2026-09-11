@@ -170,7 +170,7 @@ function App() {
         <header className="home-hero">
           <div>
             <span className="eyebrow">麻将练习场 · 实战版</span>
-            <h1>从牌效训练，到四方牌桌</h1>
+            <h1>血战到底之<span className="brand-accent">破晓</span>杀机</h1>
             <p>完整体验成都血战到底：定缺、碰杠胡、三家 AI 对抗与逐笔结算。</p>
             <span className="release-version">
               内测版

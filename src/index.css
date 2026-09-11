@@ -30,6 +30,8 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 
 .home-hero { max-width: 1100px; margin: 1rem auto 2rem; }
 .home-hero h1 { margin: .5rem 0; font-size: clamp(2.4rem, 6vw, 5rem); line-height: 1.03; }
+/* 品牌字「破晓」取自主按钮的蓝绿渐变（.primary-action 同色），文案改名字时只改字不改色 */
+.brand-accent { color: #7ff5cc; background: linear-gradient(135deg, #7ff5cc, #30c999); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .home-hero p { color: #b3cbc5; font-size: 1.05rem; }
 .battle-card { position: relative; max-width: 1100px; margin: auto; min-height: 400px; padding: 1.5rem; overflow: hidden; border: 1px solid #2e7d6b; border-radius: 18px; background: linear-gradient(135deg, rgba(18, 69, 59, .96), rgba(6, 21, 21, .98)); box-shadow: 0 24px 64px #0007, inset 0 1px #ffffff20; }
 .battle-copy { max-width: 500px; position: relative; z-index: 2; }.battle-copy h2 { font-size: clamp(2.6rem, 7vw, 4.5rem); margin: .35rem 0; }.battle-copy p { margin: 0; color: #9fc3b9; font-size: .9rem; }
