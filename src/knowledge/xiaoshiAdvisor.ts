@@ -5,11 +5,11 @@
 // 约定：宁缺毋滥。未命中 = 空数组 = 保持安静，绝不用规则库去抢破晓哥教练的主决策权。
 // 消费方：训练引擎「导师建议」入口 / 未来 UI 的双视角并列展示。
 
-import type { Tile, TileType } from '../types'
 import type { GameState, Meld, PlayerId, PlayerState, TileInstance } from '../game/types'
+import type { Tile, TileType } from '../types'
+import type { DecisionTheme, XiaoshiRule } from './xiaoshiTypes'
 import { countOpportunities } from './mahjongTheory'
 import { getXiaoshiRule } from './xiaoshiRules'
-import type { DecisionTheme, XiaoshiRule } from './xiaoshiTypes'
 
 // ---------------------------------------------------------------------------
 // 座次：把 playerId 换算为相对座次（以引擎行动流为序）
@@ -139,9 +139,9 @@ function matchRiverInfer(ctx: RuleContext): RuleHit | null {
         return {
           windowKind: 'discard',
           headline: `${seat}大概率没有 567/678/789${type} 这类高张顺子`,
-          advice: `他弃过 ${tile} 与 ${partner}，该门高张区（7/8/9${type}）在他手里组成顺子的概率很低。` +
-            `你想打 ${type} 门高张时，「喂成顺」的担忧可降一档——但这只是降权不是免死，` +
-            `仍要按定缺与单张需求常规防守；若对手此局打法非常规，该推断要打折扣。`,
+          advice: `他弃过 ${tile} 与 ${partner}，该门高张区（7/8/9${type}）在他手里组成顺子的概率很低。`
+            + `你想打 ${type} 门高张时，「喂成顺」的担忧可降一档——但这只是降权不是免死，`
+            + `仍要按定缺与单张需求常规防守；若对手此局打法非常规，该推断要打折扣。`,
           evidence: [`${seat}弃过 ${tile}、${partner}（同门跨 8）${extra}`, `可核验来源：${seat}的牌河共 ${discards.length} 张`],
         }
       }
@@ -213,10 +213,10 @@ function matchDropCall(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'response',
     headline: `碰${tile}能下叫，但这个叫大概率「给自己看」`,
-    advice: `碰${tile}后最佳只能下 ${best.waitKinds} 种叫、活张仅 ${best.live} 张` +
-      (best.live === 0 ? '（基本是死叫）' : '') +
-      `——${best.waitLabels.join('、')}。碰下去会锁死变叫空间；` +
-      `如果暗手还有其他进张路线，先别急着碰，等更好的叫再出手。`,
+    advice: `碰${tile}后最佳只能下 ${best.waitKinds} 种叫、活张仅 ${best.live} 张${
+      best.live === 0 ? '（基本是死叫）' : ''
+    }——${best.waitLabels.join('、')}。碰下去会锁死变叫空间；`
+    + `如果暗手还有其他进张路线，先别急着碰，等更好的叫再出手。`,
     evidence: [
       `响应窗口：${seatLabelOf(self, window.sourcePlayer)}打出 ${tile}`,
       `碰后最佳叫口：${best.waitKinds} 种 / 活张 ${best.live} 张`,
@@ -370,9 +370,9 @@ function matchRebuildFromMelds(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'any',
       headline: `${seat}两副${dom.type}子副露 → 手牌主门大概率是${mainHand}`,
-      advice: `他已碰出 ${dom.count} 副${dom.type}子，${dom.type}子基本被他消耗/定型，` +
-        `剩余手牌应集中在${mainHand}门。用反事实排除法细化：若他有某组合，就不会先打出那些早期弃张。` +
-        `重建结果只用来估算张数，不要当成精确断言——他打法若非常规，这条要打折扣。`,
+      advice: `他已碰出 ${dom.count} 副${dom.type}子，${dom.type}子基本被他消耗/定型，`
+        + `剩余手牌应集中在${mainHand}门。用反事实排除法细化：若他有某组合，就不会先打出那些早期弃张。`
+        + `重建结果只用来估算张数，不要当成精确断言——他打法若非常规，这条要打折扣。`,
       evidence: [
         `${seat}副露：${p.melds.map(m => m.tiles[0]).filter((t): t is TileInstance => t !== undefined).map(tileLabel).join('、')}（${dom.count} 副${dom.type}门）`,
         early.length > 0 ? `其早期弃${mainHand}：${early.map(tileLabel).join('、')} → 可反事实排除相关组合` : `其尚未弃过${mainHand}`,
@@ -420,9 +420,9 @@ function matchReadBigDandiao(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'any',
       headline: `${seat}副露 ${p.melds.length} 副且几乎不弃${suit}，单钓大概率在${suit}门`,
-      advice: `他手上剩约 ${handLeft} 张、${suit}门一张没怎么打过，说明他在捏${suit}等单钓。` +
-        `打${suit}门前先按「他会胡」来评估风险；若能读得更细（如他打过 5${suit}），就把 5${suit} 相关组合排除掉，` +
-        `候选范围能再收窄。注意：若多家都在收${suit}，这个推断失效。`,
+      advice: `他手上剩约 ${handLeft} 张、${suit}门一张没怎么打过，说明他在捏${suit}等单钓。`
+        + `打${suit}门前先按「他会胡」来评估风险；若能读得更细（如他打过 5${suit}），就把 5${suit} 相关组合排除掉，`
+        + `候选范围能再收窄。注意：若多家都在收${suit}，这个推断失效。`,
       evidence: [
         `${seat}副露 ${p.melds.length} 副（${dom === null ? '分散' : `主导${dom.type}门`}），手牌约 ${handLeft} 张`,
         `其${suit}门弃牌仅 ${countSuit(p.discards, suit)} 张 → 明显捏住`,
@@ -477,8 +477,8 @@ function matchInfoTwoCollect(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'any',
       headline: `${suit}门实际只剩你在收 ≈ 单行道`,
-      advice: `原本两家收${suit}，但${seat}给出明确反向信息（${reason}），等于把${suit}门让给你了。` +
-        `这种时候可以大胆在${suit}门进攻/做牌，不必按「两家争门」的保守节奏打。`,
+      advice: `原本两家收${suit}，但${seat}给出明确反向信息（${reason}），等于把${suit}门让给你了。`
+        + `这种时候可以大胆在${suit}门进攻/做牌，不必按「两家争门」的保守节奏打。`,
       evidence: [
         `收${suit}门：自己 + ${seat}（共 2 家）`,
         reason,
@@ -517,9 +517,9 @@ function matchDepthJudge(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'discard',
       headline: `同是${suit}门叫口：${shallow.label}比${deep.label}浅，先出的是${shallow.label}`,
-      advice: `按牌河深浅判断：${shallow.label} 已经现了 ${shallow.seen} 张（浅张，别人手里大概率留不住），` +
-        `${deep.label} 只现了 ${deep.seen} 张（深张，明显被捏住）。` +
-        `所以等${suit}门出张时，先等到的会是${shallow.label}——保留/进攻方向据此调整。对手打法非常规时该判断要降权。`,
+      advice: `按牌河深浅判断：${shallow.label} 已经现了 ${shallow.seen} 张（浅张，别人手里大概率留不住），`
+        + `${deep.label} 只现了 ${deep.seen} 张（深张，明显被捏住）。`
+        + `所以等${suit}门出张时，先等到的会是${shallow.label}——保留/进攻方向据此调整。对手打法非常规时该判断要降权。`,
       evidence: ranked.map(r => `${r.label}：河里已现 ${r.seen} 张，剩 ${r.remaining} 张`).slice(0, 4),
     }
   }
@@ -561,9 +561,9 @@ function matchNoreactionInfo(ctx: RuleContext): RuleHit | null {
       return {
         windowKind: 'any',
         headline: `${suit}门高张 ${hidden.map(v => `${v}${suit}`).join('、')} 一张未现 → ${seat}那手多半已成结构`,
-        advice: `${seat}不缺${suit}却几乎不打${suit}，而且${suit}门高张一张都没出来过——` +
-          `说明这些高张大概率已被他（或别家）捏成了顺子/对子结构。结论有两个：` +
-          `① 你想上${suit}门高张基本没戏；② 你打${suit}门高张的风险比想象中高。`,
+        advice: `${seat}不缺${suit}却几乎不打${suit}，而且${suit}门高张一张都没出来过——`
+          + `说明这些高张大概率已被他（或别家）捏成了顺子/对子结构。结论有两个：`
+          + `① 你想上${suit}门高张基本没戏；② 你打${suit}门高张的风险比想象中高。`,
         evidence: [
           `${seat}定缺${p.dingque}，${suit}门仅弃 ${countSuit(p.discards, suit)} 张`,
           `${suit}门未现高张：${hidden.map(v => `${v}${suit}`).join('、')}`,
@@ -600,9 +600,9 @@ function matchEnumProbChoice(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: '两条路线存活张数几乎一样 → 别纠结读牌，按概率选',
-    advice: `现在精确读不出谁手里有什么，两条路线的存活张数又咬得很紧（${top.live} vs ${second.live}）。` +
-      `这种局面就别再靠「我觉得他像是在做 X」来选了——枚举对手可能的组合、逐情形数剩余张数，` +
-      `加总后选期望最大的那条。时间紧时直接用存活张数估算即可。`,
+    advice: `现在精确读不出谁手里有什么，两条路线的存活张数又咬得很紧（${top.live} vs ${second.live}）。`
+      + `这种局面就别再靠「我觉得他像是在做 X」来选了——枚举对手可能的组合、逐情形数剩余张数，`
+      + `加总后选期望最大的那条。时间紧时直接用存活张数估算即可。`,
     evidence: [describe(top), describe(second), `牌墙剩 ${state.wall.length} 张`],
   }
 }
@@ -631,8 +631,8 @@ function matchFutureWaitDead(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: '别被「以后能下叫」骗了：那条路线的叫已经是死叫',
-    advice: `现在看着可以先忍一手、以后再下叫，但那条路线未来的叫口（${deadLabels.join('、')}）关键张已经没了，` +
-      `等到的概率接近零。做路线选择时要把「未来的叫」也算一遍存活，不能只算眼前。`,
+    advice: `现在看着可以先忍一手、以后再下叫，但那条路线未来的叫口（${deadLabels.join('、')}）关键张已经没了，`
+      + `等到的概率接近零。做路线选择时要把「未来的叫」也算一遍存活，不能只算眼前。`,
     evidence: [
       `死叫路线：${dead.slice(0, 2).map(p => `打${p.discard === null ? '（当前）' : tileLabel(p.discard)} → ${p.waits.map(w => w.label).join('/')}（剩 0）`).join('；')}`,
       `仍有活路的路线 ${alive.length} 条，最佳活 ${alive[0]?.live ?? 0} 张`,
@@ -663,9 +663,9 @@ function matchInferBeforePong(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'any',
     headline: `${seat}碰${tileLabel(meldTile)}前打过${tileLabel(earlier)} → 可排除他持有 ${lo}${mid}${hi}${type} 组合`,
-    advice: `他用反事实推理读牌：如果${seat}手上真有 ${lo}${mid}${hi}${type} 这个顺子，他就没必要先打${tileLabel(earlier)}。` +
-      `所以他大概率没有这个组合，${mid}${type} 相关张仍在墙里/别处的可能性更高——` +
-      `你在估算${type}门剩余张数时可以据此修正。注意：这套推理完全依赖对手打法合理，遇到骚操作要降权。`,
+    advice: `他用反事实推理读牌：如果${seat}手上真有 ${lo}${mid}${hi}${type} 这个顺子，他就没必要先打${tileLabel(earlier)}。`
+      + `所以他大概率没有这个组合，${mid}${type} 相关张仍在墙里/别处的可能性更高——`
+      + `你在估算${type}门剩余张数时可以据此修正。注意：这套推理完全依赖对手打法合理，遇到骚操作要降权。`,
     evidence: [
       `事件时序：${seat}先打出${tileLabel(earlier)}，之后才碰${tileLabel(meldTile)}`,
       `排除组合：${lo}${type} ${mid}${type} ${hi}${type}`,
@@ -696,9 +696,9 @@ function matchEscapeAvoidBig(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'any',
       headline: `${seat}已在${dom.type}门碰出 ${dom.count} 副 → 目标切换为「躲」`,
-      advice: `识别到大牌信号，就把这一局的目标从「做大自己的牌」改成「防御逃跑」：` +
-        `优先下叫、优先躲，分数恰到好处地贪。躲大牌优先于做大牌——` +
-        `平均下来你每做一个大牌，外面三家也各会做一个大牌。`,
+      advice: `识别到大牌信号，就把这一局的目标从「做大自己的牌」改成「防御逃跑」：`
+        + `优先下叫、优先躲，分数恰到好处地贪。躲大牌优先于做大牌——`
+        + `平均下来你每做一个大牌，外面三家也各会做一个大牌。`,
       evidence: [
         `${seat}副露 ${dom.count} 副集中在${dom.type}门`,
         `${seat}弃牌中另外两门共 ${countSuit(p.discards, SUITS[0]!) + countSuit(p.discards, SUITS[1]!) + countSuit(p.discards, SUITS[2]!) - countSuit(p.discards, dom.type)} 张 → 明显在收单一门`,
@@ -740,9 +740,9 @@ function matchEscapeSwitchSuit(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'any',
       headline: `${seat}在做${dom.type}清一色 → 把叫换到${target}门，弱势反转`,
-      advice: `${seat}收${dom.type}、弃另外两门，等于把${target}门让出来了——` +
-        `原本你在这门的缺章弱势，反而变成了「两家不要${target}」的优势。` +
-        `换叫前再确认一下：另一家是不是也在收${target}。`,
+      advice: `${seat}收${dom.type}、弃另外两门，等于把${target}门让出来了——`
+        + `原本你在这门的缺章弱势，反而变成了「两家不要${target}」的优势。`
+        + `换叫前再确认一下：另一家是不是也在收${target}。`,
       evidence: [
         `${seat}副露 ${dom.count} 副全在${dom.type}门，${dom.type}门仅弃 ${countSuit(p.discards, dom.type)} 张`,
         `其不要的门：${avoid.join('、')}；建议方向：${target}`,
@@ -783,10 +783,10 @@ function matchSetBottomLine(ctx: RuleContext): RuleHit | null {
     windowKind: 'response',
     headline: canPass ? `${seat}打出${tile}（${value} 分）：按底线可以放一手` : `${seat}打出${tile}（${value} 分）：按底线应该胡`,
     advice: canPass
-      ? `牌墙还有 ${wallLeft} 张、你换条路线的存活张有 ${bestLive} 张，属于可以「放一手」的局面——` +
-        `前提是你在中前期就想好了底线，而不是临场纠结。想放就把底线记牢，后面同样的牌一律执行。`
-      : `牌墙只剩 ${wallLeft} 张、你能等的存活张只有 ${bestLive} 张，这种局面就别想着放一手了，点炮就走。` +
-        `（若对手有满牌/杠上花的紧迫威胁，更应直接升级为「点炮就走」。）`,
+      ? `牌墙还有 ${wallLeft} 张、你换条路线的存活张有 ${bestLive} 张，属于可以「放一手」的局面——`
+      + `前提是你在中前期就想好了底线，而不是临场纠结。想放就把底线记牢，后面同样的牌一律执行。`
+      : `牌墙只剩 ${wallLeft} 张、你能等的存活张只有 ${bestLive} 张，这种局面就别想着放一手了，点炮就走。`
+        + `（若对手有满牌/杠上花的紧迫威胁，更应直接升级为「点炮就走」。）`,
     evidence: [
       `响应窗口：${seat}打出 ${tile}，胡 ${value} 分`,
       `牌墙剩 ${wallLeft} 张；换个路线存活 ${bestLive} 张`,
@@ -822,8 +822,8 @@ function matchEarlySafeDiscard(ctx: RuleContext): RuleHit | null {
       return {
         windowKind: 'discard',
         headline: `${tileLabel(head)}已被${seat}${meld.kind === 'peng' ? '碰' : '杠'}过，早打早安全`,
-        advice: `${tileLabel(head)}已经被${seat}碰/杠出来，对你下叫也没帮助，留着只是风险。` +
-          `原则：已被碰过的张，越早打越安全；反过来，还有潜在价值（能摸成对、能配合碰出）的张才值得留。`,
+        advice: `${tileLabel(head)}已经被${seat}碰/杠出来，对你下叫也没帮助，留着只是风险。`
+          + `原则：已被碰过的张，越早打越安全；反过来，还有潜在价值（能摸成对、能配合碰出）的张才值得留。`,
         evidence: [
           `${seat}的副露中含 ${tileLabel(head)}（${meld.kind}）`,
           `你手上仅 ${mine.length} 张，且不在当前最佳叫口（${[...waitLabels].join('/') || '无'}）里`,
@@ -866,7 +866,7 @@ function isolatedTiles(hand: TileInstance[]): TileInstance[] {
     const key = `${t.type}-${t.value}`
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
-  return hand.filter(t => {
+  return hand.filter((t) => {
     if ((counts.get(`${t.type}-${t.value}`) ?? 0) >= 2)
       return false
     return !hand.some(o => o.id !== t.id && o.type === t.type && Math.abs(o.value - t.value) <= 2)
@@ -876,7 +876,7 @@ function isolatedTiles(hand: TileInstance[]): TileInstance[] {
 /** 按类型+点数去重取代表张 */
 function uniqueTiles(tiles: TileInstance[]): TileInstance[] {
   const seen = new Set<string>()
-  return tiles.filter(t => {
+  return tiles.filter((t) => {
     const key = `${t.type}-${t.value}`
     if (seen.has(key))
       return false
@@ -963,10 +963,10 @@ function matchThreatEscape(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'response',
     headline: `${seat}大牌已成势 → ${target}打出${tileLabel(hu.tile)}点炮就胡`,
-    advice: `先把局势说清楚：${seat}已经${dom === null ? `摆出 ${tp.melds.length} 副副露` : `在${dom.type}门碰出 ${dom.count} 副`}，` +
-      `说明他不是在做小胡，是在走大牌路线。这个时候你等着自摸是${state.wall.length}分之一的赌博，` +
-      `而点炮一放就可能挨满。${target}打出${tileLabel(hu.tile)}（${hu.value} 分）已经是可兑现的收益，` +
-      `直接胡掉——该怂就怂。自摸收益再高（顶多差 ${THREAT_SELF_DRAW_EDGE} 倍），也抵不过一次被满的概率。`,
+    advice: `先把局势说清楚：${seat}已经${dom === null ? `摆出 ${tp.melds.length} 副副露` : `在${dom.type}门碰出 ${dom.count} 副`}，`
+      + `说明他不是在做小胡，是在走大牌路线。这个时候你等着自摸是${state.wall.length}分之一的赌博，`
+      + `而点炮一放就可能挨满。${target}打出${tileLabel(hu.tile)}（${hu.value} 分）已经是可兑现的收益，`
+      + `直接胡掉——该怂就怂。自摸收益再高（顶多差 ${THREAT_SELF_DRAW_EDGE} 倍），也抵不过一次被满的概率。`,
     evidence: [
       `威胁源：${seat}${dom === null ? `副露 ${tp.melds.length} 副` : `${dom.type}门副露 ${dom.count} 副`}`,
       `当前选择：${target}打出${tileLabel(hu.tile)}，可胡 ${hu.value} 分`,
@@ -991,7 +991,7 @@ function matchKeepLive(ctx: RuleContext): RuleHit | null {
   const iso = uniqueTiles(isolatedTiles(me.hand))
   if (iso.length < 2)
     return null
-  const scored = iso.map(t => {
+  const scored = iso.map((t) => {
     let neighbors = 0
     for (const delta of [-2, -1, 1, 2]) {
       const v = t.value + delta
@@ -1007,10 +1007,10 @@ function matchKeepLive(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `两张孤张 ${scored.map(s => tileLabel(s.tile)).join('、')}：留${tileLabel(keep.tile)}打${tileLabel(drop.tile)}`,
-    advice: `刚碰/杠完要丢孤张，这个时候别凭手感挑，用牌河算存活账：` +
-      `${tileLabel(keep.tile)} 的邻张在桌上已经现了 ${keep.neighbors} 张，说明它这张还有更多可能留在墙里，` +
-      `多留一下就多一个成对的机会；反过来${tileLabel(drop.tile)}周围信息少、也没人喂，` +
-      `留着多半变成废张。注意对手如果是「拆搭子」（抱肚子）打法，这条推断要反过来。`,
+    advice: `刚碰/杠完要丢孤张，这个时候别凭手感挑，用牌河算存活账：`
+      + `${tileLabel(keep.tile)} 的邻张在桌上已经现了 ${keep.neighbors} 张，说明它这张还有更多可能留在墙里，`
+      + `多留一下就多一个成对的机会；反过来${tileLabel(drop.tile)}周围信息少、也没人喂，`
+      + `留着多半变成废张。注意对手如果是「拆搭子」（抱肚子）打法，这条推断要反过来。`,
     evidence: scored.map(s => `${tileLabel(s.tile)}：邻张已现 ${s.neighbors} 张`).slice(0, 4),
   }
 }
@@ -1039,10 +1039,10 @@ function matchCheckDingqueBeforePong(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'response',
     headline: `早期碰${tileLabel(target)}：先确认全桌缺章再动手`,
-    advice: `碰牌是不可逆的开关，而开局才打了 ${totalDiscards} 张，各家缺章信息还没暴露够。` +
-      `现在碰掉${tileLabel(target)}，等于把可能更好的方向锁死——` +
-      `万一对面三家都缺${target.type}，这张${target.type}本来是白送的优势，你反而因为碰牌把它扔了。` +
-      `先看一遍缺章：${dq}。若碰的方向与你的缺章优势一致，再放心碰。`,
+    advice: `碰牌是不可逆的开关，而开局才打了 ${totalDiscards} 张，各家缺章信息还没暴露够。`
+      + `现在碰掉${tileLabel(target)}，等于把可能更好的方向锁死——`
+      + `万一对面三家都缺${target.type}，这张${target.type}本来是白送的优势，你反而因为碰牌把它扔了。`
+      + `先看一遍缺章：${dq}。若碰的方向与你的缺章优势一致，再放心碰。`,
     evidence: [
       `${seat}打出 ${tileLabel(target)}，你可碰`,
       `当前弃牌总量 ${totalDiscards} 张（≤ ${EARLY_PONG_MAX_DISCARDS}，判为早期）`,
@@ -1080,12 +1080,12 @@ function matchBigdandiaoVsXiajiao(ctx: RuleContext): RuleHit | null {
       ? `单吊${singleWait.label}吊张多 ${gap} 张 → 走大吊路线`
       : `大吊只多一点吊张，不如走多路下叫`,
     advice: chooseSingle
-      ? `单点大吊${singleWait.label}能等 ${single.live} 张，比多路路线多 ${gap} 张，` +
-        `优势虽不算巨大但方向明确，可以接受「少胡几家」换「更容易兑现」。` +
-        `注意这个估算只押当前时点——外面的牌还在流动，别人可能先摸走吊张，是动态账不是死数字。`
-      : `单吊${singleWait.label}看着唬人，实际只对${multi.waits.map(w => w.label).join('/')}的多路方案多 ${Math.abs(gap) === 0 ? '不了' : `${gap}`}` +
-        `${gap === 0 ? '' : ''}太多张。差别只有一两张的时候，早下叫更值：` +
-        `既拿到即时收益，也少给别家一手做大牌的时间。别为大吊吊死在一棵树上。`,
+      ? `单点大吊${singleWait.label}能等 ${single.live} 张，比多路路线多 ${gap} 张，`
+      + `优势虽不算巨大但方向明确，可以接受「少胡几家」换「更容易兑现」。`
+      + `注意这个估算只押当前时点——外面的牌还在流动，别人可能先摸走吊张，是动态账不是死数字。`
+      : `单吊${singleWait.label}看着唬人，实际只对${multi.waits.map(w => w.label).join('/')}的多路方案多 ${Math.abs(gap) === 0 ? '不了' : `${gap}`}`
+        + `${gap === 0 ? '' : ''}太多张。差别只有一两张的时候，早下叫更值：`
+        + `既拿到即时收益，也少给别家一手做大牌的时间。别为大吊吊死在一棵树上。`,
     evidence: [
       `单吊路线：${single.discard === null ? '不打' : `打${tileLabel(single.discard)}`} → ${singleWait.label}（活 ${single.live} 张）`,
       `多路路线：${multi.discard === null ? '不打' : `打${tileLabel(multi.discard)}`} → ${multi.waits.map(w => w.label).join('/')}（活 ${multi.live} 张）`,
@@ -1120,10 +1120,10 @@ function matchZimoOrNothing(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'response',
     headline: `${seat}打出${tileLabel(hu.tile)}只值 ${hu.value} 分：预设自摸就走，点炮不胡`,
-    advice: `这是个典型的「期望差掰手腕」局面：点炮收 ${hu.value} 分，而自摸能收好几家、` +
-      `带上自摸加番，收益差不止一倍。牌墙还有 ${wallLeft} 张、你的存活张有 ${live} 张，` +
-      `自摸窗口还开着。开局就该把这条预设写死：自摸即走，别人点炮的小胡不接。` +
-      `当然，一旦牌局将尽或者外面有大牌威胁成型，这条预设要立刻作废、改成点炮就走。`,
+    advice: `这是个典型的「期望差掰手腕」局面：点炮收 ${hu.value} 分，而自摸能收好几家、`
+      + `带上自摸加番，收益差不止一倍。牌墙还有 ${wallLeft} 张、你的存活张有 ${live} 张，`
+      + `自摸窗口还开着。开局就该把这条预设写死：自摸即走，别人点炮的小胡不接。`
+      + `当然，一旦牌局将尽或者外面有大牌威胁成型，这条预设要立刻作废、改成点炮就走。`,
     evidence: [
       `${seat}打出 ${tileLabel(hu.tile)}：点炮 ${hu.value} 分`,
       `牌墙剩 ${wallLeft} 张（≥ ${ZIMO_MIN_WALL}），存活张 ${live} 张（≥ ${ZIMO_MIN_LIVE}）`,
@@ -1162,11 +1162,11 @@ function matchEvDeclineHu(ctx: RuleContext): RuleHit | null {
     headline: passIsBetter
       ? `尾盘点炮 ${hu.value} 分：算 EV，放过自摸更划算`
       : `尾盘点炮 ${hu.value} 分：算 EV，直接胡更稳`,
-    advice: `把账摆出来：现在胡 = ${hu.value} 分；放过 = 在 ${wallLeft} 张牌墙里摸到 ${live} 张有效牌` +
-      `（约 ${(drawChance * 100).toFixed(0)}%），自摸加番后期望约 ${passEv.toFixed(1)} 分。` +
-      (passIsBetter
-        ? `期望更高那条明明是放过，那就别急着把这一炮收了——用概率和期望来指导你的打法。`
-        : `摸到的概率已经掉下来了，这时候再赌自摸就是把期望扔了，直接胡。`),
+    advice: `把账摆出来：现在胡 = ${hu.value} 分；放过 = 在 ${wallLeft} 张牌墙里摸到 ${live} 张有效牌`
+      + `（约 ${(drawChance * 100).toFixed(0)}%），自摸加番后期望约 ${passEv.toFixed(1)} 分。${
+        passIsBetter
+          ? `期望更高那条明明是放过，那就别急着把这一炮收了——用概率和期望来指导你的打法。`
+          : `摸到的概率已经掉下来了，这时候再赌自摸就是把期望扔了，直接胡。`}`,
     evidence: [
       `${seat}打出${tileLabel(hu.tile)}：点炮 ${hu.value} 分`,
       `牌墙剩 ${wallLeft} 张；有效存活 ${live} 张 → 自摸概率约 ${(drawChance * 100).toFixed(0)}%`,
@@ -1198,9 +1198,9 @@ function matchNoRelyCrowdedSuit(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `${waitSuit}门四家都要 → 别把希望压在${best.waits.map(w => w.label).join('/')}`,
-    advice: `你手上${waitSuit}看着有 ${countSuit(me.hand, waitSuit)} 张，但${waitSuit}是四家都要的门——` +
-      `外面三家都在收，${best.waits.map(w => w.label).join('、')} 这种张被截胡的概率极高，基本没有指望。` +
-      `别被「看着很多」骗了，改从${others.join('或')}门重新找下叫路线。`,
+    advice: `你手上${waitSuit}看着有 ${countSuit(me.hand, waitSuit)} 张，但${waitSuit}是四家都要的门——`
+      + `外面三家都在收，${best.waits.map(w => w.label).join('、')} 这种张被截胡的概率极高，基本没有指望。`
+      + `别被「看着很多」骗了，改从${others.join('或')}门重新找下叫路线。`,
     evidence: [
       `收${waitSuit}门：4 家（无人缺该门）`,
       `你手上${waitSuit} ${countSuit(me.hand, waitSuit)} 张，当前叫口全在${waitSuit}门`,
@@ -1233,11 +1233,11 @@ function matchSimpleRouteFirst(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `与其深推${wait.label}，不如走${simple.waits.map(w => w.label).join('/')}的简单路线`,
-    advice: `你现在有两条路：一条是赌${wait.label}（只剩 ${wait.remaining} 张，要靠一串推断才敢押），` +
-      `一条是${simple.discard === null ? '不用改' : `打${tileLabel(simple.discard)}`}下` +
-      `${simple.waits.map(w => w.label).join('/')}（${simple.waits.length} 种叫、活 ${simple.live} 张）。` +
-      `后者多路且有量，属于「想明白也这么打、没想到也这么打」的稳妥路线，优先走它。` +
-      `不是说深推断没用——等简单路线的叫明显死透了，再去想复杂的那一套。`,
+    advice: `你现在有两条路：一条是赌${wait.label}（只剩 ${wait.remaining} 张，要靠一串推断才敢押），`
+      + `一条是${simple.discard === null ? '不用改' : `打${tileLabel(simple.discard)}`}下`
+      + `${simple.waits.map(w => w.label).join('/')}（${simple.waits.length} 种叫、活 ${simple.live} 张）。`
+      + `后者多路且有量，属于「想明白也这么打、没想到也这么打」的稳妥路线，优先走它。`
+      + `不是说深推断没用——等简单路线的叫明显死透了，再去想复杂的那一套。`,
     evidence: [
       `复杂推断路线：${complex.discard === null ? '不打' : `打${tileLabel(complex.discard)}`} → ${wait.label}（剩 ${wait.remaining} 张）`,
       `简单多路路线：${simple.discard === null ? '不打' : `打${tileLabel(simple.discard)}`} → ${simple.waits.map(w => w.label).join('/')}（活 ${simple.live} 张）`,
@@ -1267,10 +1267,10 @@ function matchMaxLiveWait(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `同样能下叫：走活张最多的那条（多 ${gap} 张）`,
-    advice: `两条路线都能下叫，但存活张差 ${gap} 张，这不是「风格偏好」的差距，是数学差距。` +
-      `永远选存活张最多的叫口：${top.waits.map(w => w.label).join('/')}（活 ${top.live} 张）优于` +
-      `${second.waits.map(w => w.label).join('/')}（活 ${second.live} 张）。` +
-      `别因为「已经投入了」「刚才那手是这么打」就舍不得改口，也别用单局结果追认。`,
+    advice: `两条路线都能下叫，但存活张差 ${gap} 张，这不是「风格偏好」的差距，是数学差距。`
+      + `永远选存活张最多的叫口：${top.waits.map(w => w.label).join('/')}（活 ${top.live} 张）优于`
+      + `${second.waits.map(w => w.label).join('/')}（活 ${second.live} 张）。`
+      + `别因为「已经投入了」「刚才那手是这么打」就舍不得改口，也别用单局结果追认。`,
     evidence: [
       `推荐路线：${describeStr(top)}`,
       `次优路线：${describeStr(second)}`,
@@ -1299,9 +1299,9 @@ function matchSingleLineAttack(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'any',
     headline: `外面三家缺${suit} → ${suit}门必须转为进攻思路`,
-    advice: `${suit}门只有你一家收，其他三家都在打缺，等于整条${suit}子河都往你这儿灌。` +
-      `这种牌面别满足于「赶紧下叫跑路」，该按进攻思路打：优先把${suit}门里的对子腾出来碰、成型做坎，` +
-      `照着往大了做。反之，如果某门是三家在收，那才要切回「追下叫效率」的常规打法——这条必须反过来执行。`,
+    advice: `${suit}门只有你一家收，其他三家都在打缺，等于整条${suit}子河都往你这儿灌。`
+      + `这种牌面别满足于「赶紧下叫跑路」，该按进攻思路打：优先把${suit}门里的对子腾出来碰、成型做坎，`
+      + `照着往大了做。反之，如果某门是三家在收，那才要切回「追下叫效率」的常规打法——这条必须反过来执行。`,
     evidence: [
       `收${suit}门：仅 1 家（你自己）`,
       `你手上${suit} ${countSuit(me.hand, suit)} 张（≥ ${SINGLE_LINE_MIN_TILES}）`,
@@ -1340,10 +1340,10 @@ function matchBigwaitCost(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `做大单钓${wait.label}的代价：先把${waitSuit}门喂出去了`,
-    advice: `要押${wait.label}做大牌，就得先拆${waitSuit}门的搭子—而${waitSuit}门有 ` +
-      `${collectorCount(state, waitSuit)} 家在收，你拆一张等于给三家送一份。还没等大牌做成，` +
-      `肥羊就放跑完了。相比之下${alt.waits.map(w => w.label).join('/')}的现成叫口也在那儿，` +
-      `宁可少番，先收了这一把再说。`,
+    advice: `要押${wait.label}做大牌，就得先拆${waitSuit}门的搭子—而${waitSuit}门有 `
+      + `${collectorCount(state, waitSuit)} 家在收，你拆一张等于给三家送一份。还没等大牌做成，`
+      + `肥羊就放跑完了。相比之下${alt.waits.map(w => w.label).join('/')}的现成叫口也在那儿，`
+      + `宁可少番，先收了这一把再说。`,
     evidence: [
       `大牌路线：${big.discard === null ? '不打' : `打${tileLabel(big.discard)}`} → 单钓${wait.label}（活 ${big.live} 张）`,
       `现成路线：${alt.discard === null ? '不打' : `打${tileLabel(alt.discard)}`} → ${alt.waits.map(w => w.label).join('/')}（活 ${alt.live} 张）`,
@@ -1373,10 +1373,10 @@ function matchCounterBigDandiao(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `${seat}在赌大单钓 → 你手上 ${pairs.length} 对，改做大对子多路压他`,
-    advice: `${seat}副露已成型，路线基本是单钓大牌，叫口窄要靠你自己送上。对付这种牌,` +
-      `最硬的办法不是躲，而是改走大对子：你手上已经是 ${pairs.map(p => tileLabel(p.tile)).join('、')} 这些活对子，` +
-      `碰出一个就多一个叫口，做成多路以后他自己必点——手上全是活对子的时候，做大对就是压制大单钓最好的办法。` +
-      `注意别为了躲他把少一番的张先打了（比如为了安全打掉中张），那不是这里的正确解。`,
+    advice: `${seat}副露已成型，路线基本是单钓大牌，叫口窄要靠你自己送上。对付这种牌,`
+      + `最硬的办法不是躲，而是改走大对子：你手上已经是 ${pairs.map(p => tileLabel(p.tile)).join('、')} 这些活对子，`
+      + `碰出一个就多一个叫口，做成多路以后他自己必点——手上全是活对子的时候，做大对就是压制大单钓最好的办法。`
+      + `注意别为了躲他把少一番的张先打了（比如为了安全打掉中张），那不是这里的正确解。`,
     evidence: [
       `${seat}副露 ${tp.melds.length} 副（${dominantMeldSuit(tp.melds)?.type ?? '分散'}门）→ 大牌路线`,
       `你的对子：${pairs.map(p => tileLabel(p.tile)).join('、')}（${pairs.length} 对）`,
@@ -1412,10 +1412,10 @@ function matchLawTwoNoWait(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'discard',
       headline: `${suit}门只有 ${collectorCount(state, suit)} 家要 → 把叫换到${suit}方向`,
-      advice: `破第一条习惯：能够变叫的时候，尽量把叫朝着「两家不要」的方向去下。` +
-        `${suit}门现在只有 ${collectorCount(state, suit)} 家在收，等于对你开放；` +
-        `而且这里也能下叫（${better.waits.map(w => w.label).join('/')}，活 ${better.live} 张），` +
-        `不至于为了变叫把牌打残。当然要根据牌面尽力为之——如果变叫之后胡张很薄、或者被杠断，就别强行变。`,
+      advice: `破第一条习惯：能够变叫的时候，尽量把叫朝着「两家不要」的方向去下。`
+        + `${suit}门现在只有 ${collectorCount(state, suit)} 家在收，等于对你开放；`
+        + `而且这里也能下叫（${better.waits.map(w => w.label).join('/')}，活 ${better.live} 张），`
+        + `不至于为了变叫把牌打残。当然要根据牌面尽力为之——如果变叫之后胡张很薄、或者被杠断，就别强行变。`,
       evidence: [
         `收${suit}门：${collectorCount(state, suit)} 家（≤2 → 「两家不要」成立）`,
         `可行路线：${better.discard === null ? '不打' : `打${tileLabel(better.discard)}`} → ${better.waits.map(w => w.label).join('/')}（活 ${better.live} 张）`,
@@ -1456,7 +1456,10 @@ function matchDropFutureRisk(ctx: RuleContext): RuleHit | null {
       if (p.discards.length < FUTURE_RISK_MIN_DISCARDS)
         continue
       let lastQueIdx = -1
-      p.discards.forEach((t, i) => { if (t.type === dq) lastQueIdx = i })
+      p.discards.forEach((t, i) => {
+        if (t.type === dq)
+          lastQueIdx = i
+      })
       const postClean = p.discards.slice(lastQueIdx + 1)
       if (postClean.length < 3)
         continue
@@ -1466,10 +1469,10 @@ function matchDropFutureRisk(ctx: RuleContext): RuleHit | null {
       return {
         windowKind: 'discard',
         headline: `${tileLabel(tile)}留久了成祸：${seat}在收${tile.type}，早打`,
-        advice: `${tileLabel(tile)}在你手上是张孤张，自己基本不上；而${seat}清完缺门之后` +
-          `打出的 ${postClean.length} 张里，${tile.type}门一张没有——他在收${tile.type}。` +
-          `这种「我自己不好上、别人摸成对就反过来打我」的张，留久了反而成祸患——趁现在墙里还剩不多，` +
-          `早点打掉，把位置留给质量更好的搭子方向。`,
+        advice: `${tileLabel(tile)}在你手上是张孤张，自己基本不上；而${seat}清完缺门之后`
+          + `打出的 ${postClean.length} 张里，${tile.type}门一张没有——他在收${tile.type}。`
+          + `这种「我自己不好上、别人摸成对就反过来打我」的张，留久了反而成祸患——趁现在墙里还剩不多，`
+          + `早点打掉，把位置留给质量更好的搭子方向。`,
         evidence: [
           `${tileLabel(tile)}是孤张，墙里最多剩 ${remaining} 张`,
           `${seat}清缺后已打 ${postClean.length} 张、${tile.type}门 0 张 → 在收该门`,
@@ -1499,10 +1502,10 @@ function matchPairCountDown(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `手上 ${pairs.length} 对又不是做七对 → 对子是负担，该拆`,
-    advice: `不做七对的时候，对子多了并不是好事。你现在 ${pairs.map(p => tileLabel(p.tile)).join('、')}` +
-      `共 ${pairs.length} 对，整手牌被占掉了 ${pairs.length * 2} 张位置，结果是下不去叫也躲不开外面的大牌。` +
-      `目标要明确：为了尽早下叫、躲过外面的大牌，该拆的对子就得拆。` +
-      (best === undefined ? '' : `当前最佳叫口活张仅 ${best.live} 张，正是对子占位的代价。`),
+    advice: `不做七对的时候，对子多了并不是好事。你现在 ${pairs.map(p => tileLabel(p.tile)).join('、')}`
+      + `共 ${pairs.length} 对，整手牌被占掉了 ${pairs.length * 2} 张位置，结果是下不去叫也躲不开外面的大牌。`
+      + `目标要明确：为了尽早下叫、躲过外面的大牌，该拆的对子就得拆。${
+        best === undefined ? '' : `当前最佳叫口活张仅 ${best.live} 张，正是对子占位的代价。`}`,
     evidence: [
       `对子：${pairs.map(p => tileLabel(p.tile)).join('、')}（${pairs.length} 对）`,
       `已有副露 ${me.melds.length} 副${me.melds.length === 0 ? '（仍可走七对，但对子已超阈值）' : '（已不能走七对）'}`,
@@ -1544,11 +1547,11 @@ function matchChoosePairToBreak(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `必须拆一对时：先拆${tileLabel(victim.tile)}，别因为「它安全」舍不得`,
-    advice: `拆对不是挑最危险的张打——虽然${tileLabel(victim.tile)}看着危险（${victim.edge ? '幺九边张' : '生张'}、河里才 ${victim.seen} 张），` +
-      `但正因为难上，它才是最该拆的——要用它碰出或摸成坎的概率最低。` +
-      `四条判据记牢：① 先锁死那些「极大概率能碰」的对；② 生张边张最容易崩对，优先拆；` +
-      `③ 对手在做七对时，他摸不上来的张早晚会打出来，那类对反而可以留；` +
-      `④ 别因为「这张打出去安全」就拆错对——安全不等于正确。`,
+    advice: `拆对不是挑最危险的张打——虽然${tileLabel(victim.tile)}看着危险（${victim.edge ? '幺九边张' : '生张'}、河里才 ${victim.seen} 张），`
+      + `但正因为难上，它才是最该拆的——要用它碰出或摸成坎的概率最低。`
+      + `四条判据记牢：① 先锁死那些「极大概率能碰」的对；② 生张边张最容易崩对，优先拆；`
+      + `③ 对手在做七对时，他摸不上来的张早晚会打出来，那类对反而可以留；`
+      + `④ 别因为「这张打出去安全」就拆错对——安全不等于正确。`,
     evidence: [
       `候选对：${ranked.map(r => `${tileLabel(r.tile)}(河里${r.seen}张${r.edge ? '，幺九边张' : ''})`).join('、')}`,
       `建议开刀：${tileLabel(victim.tile)}；锁死保留：${tileLabel(keep.tile)}`,
@@ -1575,20 +1578,20 @@ function matchHighDeepNoUp(ctx: RuleContext): RuleHit | null {
   if (best === undefined)
     return null
   for (const suit of SUITS) {
-    const waitHigh = best.waits.filter(w => w.label.endsWith(suit) && HIGH_VALUES.some(v => v === Number(w.label.charAt(0))))
+    const waitHigh = best.waits.filter(w => w.label.endsWith(suit) && HIGH_VALUES.includes(Number(w.label.charAt(0))))
     if (waitHigh.length === 0)
       continue
     if (HIGH_VALUES.some(v => seenCount(state, suit, v) > 0))
       continue
-    const lowTiles = me.hand.filter(t => t.type === suit && LOW_VALUES.some(v => v === t.value))
+    const lowTiles = me.hand.filter(t => t.type === suit && LOW_VALUES.includes(t.value))
     if (lowTiles.length < 2)
       continue
     return {
       windowKind: 'discard',
       headline: `${suit}门七八九张一张都没出来 → 别指望上${waitHigh.map(w => w.label).join('/')}`,
-      advice: `桌面上的${suit}高张非常深：7、8、9 一张都没露面，说明不是没人要，是全被人捏在手里。` +
-        `你指望摸${waitHigh.map(w => w.label).join('或')}来下叫，等于在等人施舍。改走低张方向，` +
-        `再利用一下骗张——比如打掉同门的高张，说不定还能把对手捏着的${waitHigh.map(w => w.label).join('/')}骗出来。`,
+      advice: `桌面上的${suit}高张非常深：7、8、9 一张都没露面，说明不是没人要，是全被人捏在手里。`
+        + `你指望摸${waitHigh.map(w => w.label).join('或')}来下叫，等于在等人施舍。改走低张方向，`
+        + `再利用一下骗张——比如打掉同门的高张，说不定还能把对手捏着的${waitHigh.map(w => w.label).join('/')}骗出来。`,
       evidence: [
         `${suit}门 7/8/9 河里现 0 张 → 高张深度极高`,
         `当前叫口依赖高张：${waitHigh.map(w => w.label).join('、')}`,
@@ -1610,7 +1613,7 @@ const ARMS_RACE_MIN_MY_TILES = 6
 function matchNoArmsRace(ctx: RuleContext): RuleHit | null {
   const { state, self } = ctx
   const me = state.players[self]
-  const bigs = opponentsOf(self).filter(id => {
+  const bigs = opponentsOf(self).filter((id) => {
     const p = state.players[id]
     if (p.hasWon)
       return false
@@ -1626,10 +1629,10 @@ function matchNoArmsRace(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'any',
     headline: `${seats}都在做大牌 → 别加入军备竞赛，转稳健下叫`,
-    advice: `${bigs.length} 家已经摆明了做大牌（${bigs.map(id => `${seatLabelOf(self, id)}砸${dominantMeldSuit(state.players[id].melds)?.type ?? '?'}门`).join('、')}），` +
-      `这时候你手上${mySuit}再有 ${countSuit(me.hand, mySuit)} 张也别去拼什么${mySuit}清一色了——` +
-      `军备竞赛里慢一步就是炮台：人家速度和番型都在你前面，你还没成型就先要喂牌给别人。` +
-      `除非你的关键张极早到位（起手就差一张的程度），否则放弃大牌路线，老老实实追下叫。`,
+    advice: `${bigs.length} 家已经摆明了做大牌（${bigs.map(id => `${seatLabelOf(self, id)}砸${dominantMeldSuit(state.players[id].melds)?.type ?? '?'}门`).join('、')}），`
+      + `这时候你手上${mySuit}再有 ${countSuit(me.hand, mySuit)} 张也别去拼什么${mySuit}清一色了——`
+      + `军备竞赛里慢一步就是炮台：人家速度和番型都在你前面，你还没成型就先要喂牌给别人。`
+      + `除非你的关键张极早到位（起手就差一张的程度），否则放弃大牌路线，老老实实追下叫。`,
     evidence: [
       `已做大牌：${seats}（各 ≥2 副同门副露）`,
       `你的潜在路线：${mySuit}门 ${countSuit(me.hand, mySuit)} 张（≥ ${ARMS_RACE_MIN_MY_TILES}）`,
@@ -1667,10 +1670,10 @@ function matchQingTrap(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `${suit}门 ${countSuit(me.hand, suit)} 张在手：这副清一色做出来是给大家看的`,
-    advice: `陷阱在这儿：做${suit}清一色需要连摸好几个关键张，而现在这些张要么已经被打绝、` +
-      `要么全绝在你自己手上（你自己占着，别人没法喂你）。当前最佳叫口只剩 ${live} 张，` +
-      (deadWaits.length > 0 ? `其中${deadWaits.map(w => w.label).join('、')}已经完全死掉。` : '') +
-      `这种情况下再做下去，做出来就是给大家看的——趁早转稳健路线，先把下叫落实了。`,
+    advice: `陷阱在这儿：做${suit}清一色需要连摸好几个关键张，而现在这些张要么已经被打绝、`
+      + `要么全绝在你自己手上（你自己占着，别人没法喂你）。当前最佳叫口只剩 ${live} 张，${
+        deadWaits.length > 0 ? `其中${deadWaits.map(w => w.label).join('、')}已经完全死掉。` : ''
+      }这种情况下再做下去，做出来就是给大家看的——趁早转稳健路线，先把下叫落实了。`,
     evidence: [
       `手上${suit}门 ${countSuit(me.hand, suit)} 张（≥ ${QING_TRAP_MIN_TILES} 属伪装性的「看着能做」）`,
       `当前最佳叫口活张仅 ${live} 张（≤ ${QING_TRAP_MAX_LIVE}）`,
@@ -1693,10 +1696,10 @@ function matchExpectMindset(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'any',
     headline: '刚放的那手：别让结果改了你的打法',
-    advice: `你刚刚过了一张可以做的事——现在最危险的是下一张牌开始后悔。` +
-      `打牌必须有期望收益意识：当时按概率和期望做出的选择是对的，就算这一局被结果打了脸，` +
-      `下一次同样的局面还是要这么打。改用长期进分来衡量，而不是用单局的输赢追认。` +
-      (best === undefined ? '' : ` 现在这一手，按期望仍然是${best.waits.map(w => w.label).join('/')}（活 ${best.live} 张）这条路更划算。`),
+    advice: `你刚刚过了一张可以做的事——现在最危险的是下一张牌开始后悔。`
+      + `打牌必须有期望收益意识：当时按概率和期望做出的选择是对的，就算这一局被结果打了脸，`
+      + `下一次同样的局面还是要这么打。改用长期进分来衡量，而不是用单局的输赢追认。${
+        best === undefined ? '' : ` 现在这一手，按期望仍然是${best.waits.map(w => w.label).join('/')}（活 ${best.live} 张）这条路更划算。`}`,
     evidence: [
       '检测到你刚刚放过一次和牌机会（passed_win）',
       '触发期望收益提醒：按长期主义执行，不追认单局结果',
@@ -1724,9 +1727,9 @@ function matchNoZhangPlan(ctx: RuleContext): RuleHit | null {
   return {
     windowKind: 'discard',
     headline: `摸不上牌（孤张 ${iso.length} 张、活张 ${live}）→ 重估单牌搭子取舍`,
-    advice: `这局你明显在打「卡」：孤张有 ${iso.map(tileLabel).join('、')}，最佳叫口只剩 ${live} 张。` +
-      `这种局面要把注意力放在两件事上：一是单牌和搭子到底怎么取舍，尽量提高下叫机会；` +
-      `二是别因为自己不上牌就全不管别人——盯着对手的牌河，别让别家轻易坐大。`,
+    advice: `这局你明显在打「卡」：孤张有 ${iso.map(tileLabel).join('、')}，最佳叫口只剩 ${live} 张。`
+      + `这种局面要把注意力放在两件事上：一是单牌和搭子到底怎么取舍，尽量提高下叫机会；`
+      + `二是别因为自己不上牌就全不管别人——盯着对手的牌河，别让别家轻易坐大。`,
     evidence: [
       `孤张：${iso.map(tileLabel).join('、')}（${iso.length} 张 ≥ ${NO_ZHANG_MIN_ISO}）`,
       `最佳叫口活张 ${live} 张（≤ ${NO_ZHANG_MAX_LIVE}）`,
@@ -1771,10 +1774,12 @@ function matchDropDeadPair(ctx: RuleContext): RuleHit | null {
     return {
       windowKind: 'discard',
       headline: `${tileLabel(pair.tile)}已经是死对 → 早点打掉腾位置`,
-      advice: `${tileLabel(pair.tile)}墙里再没有了（你自己 ${mine} 张 + 桌上已现 ${seenCount(state, pair.tile.type, pair.tile.value)} 张 = 4），` +
-        `留着只能占两个位置、等不到第三次。死锁的对先打掉，把位置腾给还活着的方向。` +
-        (best === undefined ? '' : ` 顺便留意：你当前的叫口是${best.waits.map(w => w.label).join('/')}，` +
-          `如果哪张胡张也被打绝了，要随时准备换叫。`),
+      advice: `${tileLabel(pair.tile)}墙里再没有了（你自己 ${mine} 张 + 桌上已现 ${seenCount(state, pair.tile.type, pair.tile.value)} 张 = 4），`
+        + `留着只能占两个位置、等不到第三次。死锁的对先打掉，把位置腾给还活着的方向。${
+          best === undefined
+            ? ''
+            : ` 顺便留意：你当前的叫口是${best.waits.map(w => w.label).join('/')}，`
+              + `如果哪张胡张也被打绝了，要随时准备换叫。`}`,
       evidence: [
         `${tileLabel(pair.tile)}：你手上 ${mine} 张 + 已现 ${seenCount(state, pair.tile.type, pair.tile.value)} 张 = 4 张全部锁定`,
       ],
