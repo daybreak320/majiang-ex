@@ -1,11 +1,11 @@
-// 敲破黑板导师面板（UI 层）
-// 与「破晓哥主线教练」(AssistantPanel) 并列展示：主线教练给主决策，这里只补「风格镜像」——
+import type { GameState } from '../game/types'
+// 理由解释面板（UI 层）
+// 与出牌建议并列展示：主线教练给主决策，这里只补经验规则、依据与边界——
 // 命中规则时输出一句话观点 + 理由原话 + 边界条件 + 可核验证据；未命中则保持安静。
 import { useMemo, useState } from 'react'
-import type { GameState } from '../game/types'
 import { buildXiaoshiAdvice } from '../knowledge/xiaoshiAdvisor'
-import { XIAOSHI_RULES } from '../knowledge/xiaoshiRules'
 import { XIAOSHI_CASES } from '../knowledge/xiaoshiCases'
+import { XIAOSHI_RULES } from '../knowledge/xiaoshiRules'
 
 const WINDOW_LABEL: Record<'response' | 'discard' | 'any', string> = {
   response: '碰/杠/胡响应',
@@ -18,9 +18,9 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   return (
-    <section className="xiaoshi-panel" aria-label="敲破黑板提示">
+    <section className="xiaoshi-panel" aria-label="我的决策 · 理由解释">
       <div className="xiaoshi-heading">
-        <span className="eyebrow">敲破黑板</span>
+        <span className="eyebrow">理由解释</span>
         <h3>实战风格提示</h3>
         <p>
           {XIAOSHI_CASES.length}

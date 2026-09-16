@@ -361,17 +361,17 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .event-route-explainer small { color: #9fc6ba; font-size: .72rem; line-height: 1.5; }
 
 .game-columns { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 1720px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: .8rem; align-items: start; overflow: clip; }.game-columns.endgame-active { align-items: stretch; }.game-columns > .table-grid { min-width: 0; max-width: none; margin: 0; }.game-column { position: relative; z-index: 1; min-width: 0; min-height: 0; display: grid; gap: .6rem; align-content: start; max-height: calc(100vh - 205px); overflow: hidden auto; overscroll-behavior: contain; }.game-right .assistant-panel { max-width: none; width: 100%; margin: 0; }
-/* 三区分工：左=敲破黑板，中=牌桌，右=晓算一下，响哥警钟移到画面下侧(.game-bottom-dock)。
+/* 三区分工：左=理由解释，中=牌桌，右=出牌建议，风险提醒移到画面下侧(.game-bottom-dock)。
    列数按「实际开启的面板」决定，避免两个长文本面板挤在同一列互相顶掉、被 overflow 裁掉。 */
 .game-columns.with-left.with-right { grid-template-columns: clamp(224px, 17.5vw, 300px) minmax(0, 1fr) clamp(258px, 21vw, 340px); }
 .game-columns.with-left:not(.with-right) { grid-template-columns: clamp(224px, 17.5vw, 300px) minmax(0, 1fr); }
 .game-columns.with-right:not(.with-left) { grid-template-columns: minmax(0, 1fr) clamp(258px, 21vw, 340px); }
-/* 画面下侧的响哥警钟：横向铺开三个对手，限高内部滚动，不挤占牌桌 */
+/* 画面下侧的风险提醒：横向铺开三个对手，限高内部滚动，不挤占牌桌 */
 .game-bottom-dock { flex: none; width: 100%; max-width: 1720px; margin: .7rem auto 0; }
 .game-bottom-dock .endgame-defense-panel { max-height: min(34vh, 330px); overflow: hidden auto; overscroll-behavior: contain; }
 .game-bottom-dock .endgame-defense-heading { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
 .game-bottom-dock .endgame-opponents { grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); }
-/* 敲破黑板进左栏后：去掉原上边距，并让窄栏内的卡片头部/底部可换行，避免挤成一条 */
+/* 理由解释面板进左栏后：去掉原上边距，并让窄栏内的卡片头部/底部可换行，避免挤成一条 */
 .game-column .xiaoshi-panel { margin-top: 0; }
 .game-left .xiaoshi-card-head { row-gap: .3rem; }
 .game-left .xiaoshi-card footer { flex-wrap: wrap; row-gap: .3rem; }
@@ -426,3 +426,30 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .player-id-modal-actions { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1rem; }
 .player-id-modal-actions button { min-height: 44px; }
 @media (max-width: 600px) { .player-id-modal-actions { flex-direction: column-reverse; } .player-id-modal-actions button { width: 100%; } }
+
+/* 叫口推演面板（复用 endgame-defense-panel 暗色底栏外观） */
+.guess-win-panel .guess-section { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin: .7rem 0 .3rem; min-width: 0; font-size: .82rem; color: #fff0bd; border-top: 1px solid #ffffff14; padding-top: .5rem; }
+.guess-win-panel .guess-section span { font-weight: 600; }
+.guess-win-panel .guess-section small { color: #b8ab7f; font-size: .68rem; }
+.guess-win-panel .guess-hypothesis { display: block; margin: .35rem 0; overflow-wrap: anywhere; color: #d9d1b5; font-size: .76rem; line-height: 1.5; }
+.guess-win-panel .guess-hypothesis > b { margin-right: .35rem; padding: .1rem .3rem; border-radius: 999px; font-size: .62rem; }
+.guess-win-panel .guess-reason { display: block; margin-top: .15rem; color: #c7bf9f; font-size: .72rem; }
+.guess-win-panel .guess-concealed { display: block; margin-top: .15rem; color: #9fe7cf; font-size: .72rem; }
+.guess-win-panel .wait-dead { opacity: .55; text-decoration: line-through; }
+.guess-win-panel .memory-section { margin-top: .4rem; }
+.guess-win-panel .memory-guess-card { opacity: .92; border-left: 2px solid #e0b84a55; padding-left: .6rem; margin-top: .4rem; }
+.guess-win-panel .memory-guess-card > header { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.guess-win-panel .memory-guess-card .muted { color: #b8ab7f; font-size: .68rem; }
+.guess-win-panel .wait-single { display: inline-block; margin-left: .3rem; padding: .1rem .35rem; border-radius: 999px; font-size: .62rem; color: #ffd98a; background: #e0b84a22; border: 1px solid #e0b84a55; }
+.guess-win-panel .tenpai-hint { margin: .25rem 0 0; color: #9fe7cf; font-size: .7rem; }
+
+/* 看推演：逐张叫牌展开 AI 的成牌拆解 */
+.guess-win-panel .wait-row { display: flex; flex-direction: column; gap: .3rem; width: 100%; }
+.guess-win-panel .wait-chip { display: flex; align-items: center; justify-content: space-between; gap: .6rem; width: 100%; text-align: left; padding: .32rem .5rem; color: #dff8f1; border: 1px solid #ffffff1a; border-radius: 6px; background: #ffffff0a; font-variant-numeric: tabular-nums; font-size: .72rem; cursor: pointer; transition: border-color .15s, background .15s; }
+.guess-win-panel .wait-chip:hover { border-color: #5eead466; background: #0b453a66; }
+.guess-win-panel .wait-chip.wait-dead { opacity: .6; }
+.guess-win-panel .wait-chip .see-reason { flex: 0 0 auto; color: #8be0c8; font-size: .66rem; font-weight: 800; white-space: nowrap; }
+.guess-win-panel .wait-reason-box { margin: .1rem 0 .35rem; padding: .1rem .4rem; border-left: 2px solid #38bdf855; background: #062b3222; }
+
+/* 胡牌组合里的龙七对 / 双龙七对身份牌 */
+.qidui-badge { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .66rem; font-weight: 800; color: #ffd1ec; background: #f472b622; border: 1px solid #f472b655; }

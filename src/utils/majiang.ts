@@ -64,7 +64,10 @@ function canHu(tiles: Tile[]): boolean {
   return isNormalHu(tiles)
 }
 
-// 检查七对子
+// 检查七对子（含龙七对 / 双龙七对：四张相同折两对）
+// Reason: 四川麻将规则中，手里四张相同不杠、直接当两对用即为龙七对，
+// 与 game/scoring.ts 的 getQiDuiLevel（count === 2 || count === 4）保持同一口径，
+// 否则「清一色龙七对」的听牌会被漏判。
 function isQiDui(tiles: Tile[]): boolean {
   if (tiles.length !== 14)
     return false
@@ -75,7 +78,24 @@ function isQiDui(tiles: Tile[]): boolean {
     pairs.set(key, (pairs.get(key) || 0) + 1)
   }
 
-  return Array.from(pairs.values()).every(count => count === 2)
+  let pairCount = 0
+  for (const count of pairs.values()) {
+    if (count % 2 !== 0)
+      return false
+    pairCount += count / 2
+  }
+
+  return pairCount === 7
+}
+
+// 统计 14 张牌里「四张相同」的组数：1 组 → 龙七对，2 组 → 双龙七对
+export function countQiDuiQuads(tiles: Tile[]): number {
+  const counts = new Map<string, number>()
+  for (const tile of tiles) {
+    const key = `${tile.type}${tile.value}`
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+  return Array.from(counts.values()).filter(count => count === 4).length
 }
 
 // 检查普通胡牌
