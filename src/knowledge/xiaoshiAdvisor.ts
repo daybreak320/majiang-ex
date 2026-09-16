@@ -9,7 +9,7 @@ import type { Tile, TileType } from '../types'
 import type { GameState, Meld, PlayerId, PlayerState, TileInstance } from '../game/types'
 import { countOpportunities } from './mahjongTheory'
 import { getXiaoshiRule } from './xiaoshiRules'
-import type { DecisionTheme } from './xiaoshiTypes'
+import type { DecisionTheme, XiaoshiRule } from './xiaoshiTypes'
 
 // ---------------------------------------------------------------------------
 // 座次：把 playerId 换算为相对座次（以引擎行动流为序）
@@ -56,10 +56,15 @@ export interface XiaoshiAdvice {
   confidence: number
   /** 命中的可核验事实（人读，用于展示证据链） */
   evidence: string[]
+  /** 金句与当前局花色不一致时的桥接说明（如案例举条子、当前局是万子）；为 null 不展示 */
+  quoteBridge?: string | null
 }
 
 /** 规则执行器的命中产物：元数据（金句/边界/置信度/主题）从规则库统一取 */
-type RuleHit = Omit<XiaoshiAdvice, 'ruleId' | 'ruleName' | 'theme' | 'quote' | 'boundary' | 'confidence'>
+type RuleHit = Omit<XiaoshiAdvice, 'ruleId' | 'ruleName' | 'theme' | 'quote' | 'boundary' | 'confidence'> & {
+  /** 当前局主门花色（由执行器从叫口推导），供 buildXiaoshiAdvice 生成花色桥接；不进 UI 结构 */
+  mainSuit?: TileType | null
+}
 
 /** 单条规则的判定上下文 */
 interface RuleContext {
@@ -1271,6 +1276,7 @@ function matchMaxLiveWait(ctx: RuleContext): RuleHit | null {
       `次优路线：${describeStr(second)}`,
       `牌墙剩 ${state.wall.length} 张`,
     ],
+    mainSuit: (top.waits[0]?.label.slice(-1) as TileType) ?? null,
   }
 }
 
@@ -1869,6 +1875,20 @@ export interface AdviceOptions {
  * - 未命中返回空数组（保持安静，不干预破晓哥教练的主建议）
  * - 决策类（response/discard）与观察类（any）分开限流，各自按置信度降序截断
  */
+/**
+ * 金句（案例原话）与当前局主门花色不一致时，生成桥接说明。
+ * 例：破晓哥原话举「九条」的例子，但当前局是万子门 → 明确「这是案例花色、不是给你的指令，思路通用」。
+ * 同花色、无主门、金句不含具体花色时返回 null（不展示桥接）。
+ */
+export function makeQuoteBridge(rule: XiaoshiRule, mainSuit: TileType | null): string | null {
+  if (mainSuit === null)
+    return null
+  const quoteSuit = SUITS.find(s => rule.rationale.includes(s)) ?? null
+  if (quoteSuit === null || quoteSuit === mainSuit)
+    return null
+  return `破晓哥这句原话举的是「${quoteSuit}子」的例子——这是案例里的花色，不是你当前手牌的指令。你这局对应的叫口在${mainSuit}子门，思路完全一致：同一门里永远优先选存活张最多的叫口，花色不同而已。`
+}
+
 export function buildXiaoshiAdvice(
   state: GameState,
   self: PlayerId = 0,
@@ -1883,6 +1903,9 @@ export function buildXiaoshiAdvice(
     const hit = run(ctx)
     if (hit === null)
       continue
+    // 金句（案例原话）里的花色若与当前局主门不一致，生成桥接说明，避免「导师在让我选条子」的误读
+    const quoteBridge = makeQuoteBridge(rule, hit.mainSuit ?? null)
+    const { mainSuit: _drop, ...hitRest } = hit
     hits.push({
       ruleId,
       ruleName: rule.name,
@@ -1890,7 +1913,8 @@ export function buildXiaoshiAdvice(
       quote: rule.rationale,
       boundary: rule.boundary ?? null,
       confidence: rule.confidence,
-      ...hit,
+      ...hitRest,
+      quoteBridge,
     })
   }
   const hitIds = new Set(hits.map(h => h.ruleId))

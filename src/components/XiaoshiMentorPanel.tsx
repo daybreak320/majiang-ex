@@ -50,7 +50,9 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
                       <b>{item.headline}</b>
                     </div>
                     <p>{item.advice}</p>
+                    <span className="xiaoshi-quote-badge">破晓哥原话 · 案例</span>
                     <blockquote>{item.quote}</blockquote>
+                    {item.quoteBridge && <p className="xiaoshi-bridge">{item.quoteBridge}</p>}
                     <footer>
                       <button className="xiaoshi-toggle" onClick={() => setExpanded(open ? null : item.ruleId)}>
                         {open ? '收起依据' : '看依据与边界'}

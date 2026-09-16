@@ -8,10 +8,12 @@ import { executeCommand } from '../game/engine'
 import {
   buildXiaoshiAdvice,
   DROP_CALL_MAX_LIVE_WAITS,
+  makeQuoteBridge,
   MAX_DECISION_ADVICE, MAX_OBSERVE_ADVICE,
   relativeDistance,
   seatLabelOf,
 } from './xiaoshiAdvisor'
+import { getXiaoshiRule } from './xiaoshiRules'
 
 /** 从标准牌池按「1万 2条 3筒」描述取牌 */
 function take(pool: TileInstance[], specification: string): TileInstance[] {
@@ -667,5 +669,30 @@ describe('R-DROP-FUTURE-RISK-v0：留久成祸的张要早打', () => {
     // 定缺万 + 弃「万4 条3 筒1」：清缺后打过 1 张筒 → 收筒前提不成立
     const { state } = futureRiskGame(903, '1万 2万 3万 4万 5条 6条 7条 8筒', '万')
     expect(buildXiaoshiAdvice(state, 0).find(a => a.ruleId === 'R-DROP-FUTURE-RISK-v0')).toBeUndefined()
+  })
+})
+
+describe('makeQuoteBridge：案例花色 vs 当前局主门桥接', () => {
+  const maxLive = getXiaoshiRule('R-MAX-LIVE-WAIT-v0')! // rationale 含「九条」
+  const pairDown = getXiaoshiRule('R-PAIR-COUNT-DOWN-v0')! // rationale 不含具体花色
+
+  it('案例举条子、当前局是万子门 → 出桥接，明确「案例花色非指令、思路通用」', () => {
+    const bridge = makeQuoteBridge(maxLive, '万')
+    expect(bridge).not.toBeNull()
+    expect(bridge).toContain('条子')
+    expect(bridge).toContain('万子门')
+    expect(bridge).toContain('不是你当前手牌的指令')
+  })
+
+  it('案例举条子、当前局也是条子门 → 同花色不桥接', () => {
+    expect(makeQuoteBridge(maxLive, '条')).toBeNull()
+  })
+
+  it('无当前主门（mainSuit=null）→ 不桥接', () => {
+    expect(makeQuoteBridge(maxLive, null)).toBeNull()
+  })
+
+  it('金句本身不含具体花色 → 不桥接', () => {
+    expect(makeQuoteBridge(pairDown, '万')).toBeNull()
   })
 })

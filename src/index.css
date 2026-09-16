@@ -109,6 +109,8 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .xiaoshi-card-head b { color: #eafff7; font-size: .88rem; }
 .xiaoshi-card > p { margin: .45rem 0 0; color: #c6e6dc; font-size: .8rem; line-height: 1.7; }
 .xiaoshi-card blockquote { margin: .45rem 0 0; padding-left: .55rem; border-left: 3px solid #f2c66d; color: #f4d486; font-size: .78rem; line-height: 1.6; }
+.xiaoshi-quote-badge { display: inline-block; margin-top: .55rem; padding: .08rem .45rem; border-radius: 999px; color: #94b3ab; background: #12332e; border: 1px solid #2e6b5c; font-size: .64rem; font-weight: 800; letter-spacing: .04em; }
+.xiaoshi-bridge { margin: .4rem 0 0; padding: .5rem .6rem; border-radius: 10px; border-left: 3px solid #5eead4; background: #0c2c27; color: #bfe9dc; font-size: .76rem; line-height: 1.7; }
 .xiaoshi-card footer { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-top: .5rem; }
 .xiaoshi-toggle { padding: .3rem .6rem; color: #c9f8e8; border: 1px solid #327d6c; border-radius: 8px; background: #12332e; cursor: pointer; font-size: .74rem; }
 .xiaoshi-card footer small { color: #8ca8a1; font-size: .7rem; }
