@@ -87,7 +87,7 @@ describe('战略级提醒', () => {
     expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('三家同缺') })
   })
 
-  it('玩家 1 是上家：清缺后两副露同一门，正确提示睡宽床与防清一色', () => {
+  it('玩家 1 是下家：清缺后两副露同一门，正确提示睡宽床与防清一色', () => {
     const { state, pool } = fixture()
     state.players[1].dingque = '万'
     state.players[1].discards = take(pool, '19万')
@@ -95,8 +95,8 @@ describe('战略级提醒', () => {
       { kind: 'peng', tiles: take(pool, '333条'), fromPlayer: 2 },
       { kind: 'peng', tiles: take(pool, '666条'), fromPlayer: 3 },
     ]
-    expect(detectOpponentThreats(state)).toMatchObject([{ playerId: 1, position: '上家', targetType: '条', meldCount: 2 }])
-    expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('上家睡宽床') })
+    expect(detectOpponentThreats(state)).toMatchObject([{ playerId: 1, position: '下家', targetType: '条', meldCount: 2 }])
+    expect(buildStrategicReminder(state)).toMatchObject({ posture: 'retreat', title: expect.stringContaining('下家睡宽床') })
   })
 
   it('对家打缺后连续推三张第二门时退出清一色竞争，两张不算强信号', () => {

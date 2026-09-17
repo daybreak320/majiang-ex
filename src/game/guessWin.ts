@@ -15,7 +15,8 @@ import { identifyFanPatterns } from './scoring'
 
 const EMPTY_OPPORTUNITY: OpportunityResult = { total: 0, waits: [], structuralWaits: [] }
 
-const GUESS_POSITIONS: Record<PlayerId, string> = { 0: '你', 1: '上家', 2: '对家', 3: '下家' }
+// 与引擎轮转 (from+1)%4 一致：玩家 1 = 下家（右手边）、玩家 3 = 上家（左手边）
+const GUESS_POSITIONS: Record<PlayerId, string> = { 0: '你', 1: '下家', 2: '对家', 3: '上家' }
 
 function projectTile(t: TileInstance): Tile {
   return { type: t.type, value: t.value }

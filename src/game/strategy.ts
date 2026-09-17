@@ -156,12 +156,13 @@ function oppositeSuitPush(state: GameState, playerId: PlayerId, targetType: Tile
   return { playerId: oppositeId, shedType, count: recent.length }
 }
 
-// 引擎按逆时针轮转：玩家 1 是你的上家，玩家 3 是你的下家；必须与桌面相对位置区分。
+// 引擎轮转为 (from+1)%4：玩家 1 在你之后行动 = 你的下家，玩家 3 在你之前行动 = 你的上家。
+// 与桌面相对位置一致——川麻逆时针，下家在右手边（见 SichuanGame 的 PLAYER_POSITIONS）。
 const PLAYER_POSITIONS: Record<PlayerId, string> = {
   0: '你',
-  1: '上家',
+  1: '下家',
   2: '对家',
-  3: '下家',
+  3: '上家',
 }
 
 /** 仅用公开副露、定缺与弃牌判断“睡宽床 / 清一色”危险，不读取对手暗牌。 */
@@ -212,13 +213,19 @@ export function inferEndgameDefense(state: GameState, playerId: PlayerId = 0, la
 
     if (allMeldsSameType && dominant !== undefined) {
       possible.push({
-        kind: 'qingyise', label: `偏${dominant.type}门清一色`, confidence: clearedDingque ? 'high' : 'medium',
+        kind: 'qingyise',
+        label: `偏${dominant.type}门清一色`,
+        confidence: clearedDingque ? 'high' : 'medium',
         reason: `公开副露 ${opponent.melds.length} 组都在${dominant.type}门${clearedDingque ? `，且已清${opponent.dingque}` : ''}；尾盘应把${dominant.type}门视作高危。`,
       })
     }
     if (tripletMelds >= 2) {
       possible.push({
-        kind: 'duiduihu', label: '对对胡 / 碰碰胡倾向', confidence: tripletMelds >= 3 ? 'high' : 'medium', reason: `已公开 ${tripletMelds} 组刻子或杠子，剩余暗手很可能继续收对子或单吊。` })
+        kind: 'duiduihu',
+        label: '对对胡 / 碰碰胡倾向',
+        confidence: tripletMelds >= 3 ? 'high' : 'medium',
+        reason: `已公开 ${tripletMelds} 组刻子或杠子，剩余暗手很可能继续收对子或单吊。`,
+      })
     }
     if (possible.length === 0) {
       possible.push({ kind: 'ordinary', label: '普通听牌或快速收口', confidence: 'low', reason: `${clearedDingque ? `已清${opponent.dingque}` : '定缺尚未完全清出'}，但没有足够公开结构锁定大牌；仍需按尾盘听牌压力防守。` })

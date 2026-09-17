@@ -130,6 +130,73 @@ export function getWideTenpaiScenario(seed: number): WideTenpaiScenario {
   return WIDE_TENPAI_SCENARIOS[Math.abs(seed) % WIDE_TENPAI_SCENARIOS.length]
 }
 
+export interface WideBedScenario {
+  id: 'qingyise-window' | 'qiduizi-window' | 'ordinary-selfdraw' | 'cash-out' | 'late-push' | 'defensive-convert'
+  title: string
+  startingHand: string
+  teachingGoal: string
+  route: '清一色' | '七对自摸' | '普通自摸' | '素胡走人'
+  condition: string
+  nextDraws: string
+}
+
+const WIDE_BED_SCENARIOS: readonly WideBedScenario[] = [
+  {
+    id: 'qingyise-window',
+    title: '万门集中 · 上牌顺',
+    startingHand: '112345567899万 15筒',
+    route: '清一色',
+    condition: '三家对手缺万；你有 11 张万子且搭子连贯，万门成为宽床，牌墙前段仍够长。',
+    teachingGoal: '观察万子是否连续进张。只有速度没塌、对手未抢跑时，才继续向清一色投资。',
+    nextDraws: '6万、7万、2万',
+  },
+  {
+    id: 'qiduizi-window',
+    title: '对子密集 · 万门宽床',
+    startingHand: '112233445566万 78条',
+    route: '七对自摸',
+    condition: '三家对手缺万；你有六组万子对子，万门宽床虽大，但顺子路线反而会拆对子。',
+    teachingGoal: '优先守住对子并找第七对；不要因为万门宽床就机械追清一色。',
+    nextDraws: '7条、8条、7万',
+  },
+  {
+    id: 'ordinary-selfdraw',
+    title: '两门都活 · 万门未够集中',
+    startingHand: '12345678万 345678条',
+    route: '普通自摸',
+    condition: '三家对手缺万；你有万门宽床，但另一门搭子也很顺，万门集中度不够。',
+    teachingGoal: '先把宽叫和自摸效率做出来；若万子不连续补强，就别硬把条子全部拆掉。',
+    nextDraws: '2条、9万、6条',
+  },
+  {
+    id: 'cash-out',
+    title: '对手抢跑 · 万门上牌差',
+    startingHand: '1234569万 3456789条',
+    route: '素胡走人',
+    condition: '三家对手缺万；你有万门宽床但孤张多，对手会较早副露且万子补张不连贯。',
+    teachingGoal: '确认对手抢跑后收缩目标：先下叫、先兑现，不为低概率大牌继续拖巡。',
+    nextDraws: '1条、9条、4万',
+  },
+  {
+    id: 'late-push',
+    title: '万门成型边缘 · 再推一巡',
+    startingHand: '112345678899万 46条',
+    route: '清一色',
+    condition: '三家对手缺万；你已有十二张万子但还有一组条子搭，清一色临门时要比较速度与收益。',
+    teachingGoal: '不是万子多就必冲：只有补张仍连贯、叫口不缩水时，才值得再推一巡。',
+    nextDraws: '7万、5条、2万',
+  },
+  {
+    id: 'defensive-convert',
+    title: '宽床受阻 · 两门转和',
+    startingHand: '123456789万 34567条',
+    route: '普通自摸',
+    condition: '三家对手缺万；万门数量够多，但条子已有完整搭子，且中盘可能出现副露压力。',
+    teachingGoal: '宽床不是单行道：保住两门连接，先做宽叫；对手推进后能立刻把进攻转换为安全。',
+    nextDraws: '8条、4万、6条',
+  },
+]
+
 /** 每个专项可轮换的题组数；入口据此保证连续进入不重复。 */
 export function getSpecialTrainingScenarioCount(kind: SpecialTrainingKind): number {
   if (kind === 'attack-qingyise')
@@ -179,49 +246,6 @@ function dealTrainingHandWithoutSuit(pool: TileInstance[], forbidden: TileType, 
   return sortTiles(hand)
 }
 
-export interface WideBedScenario {
-  id: 'qingyise-window' | 'qiduizi-window' | 'ordinary-selfdraw' | 'cash-out' | 'late-push' | 'defensive-convert'
-  title: string
-  startingHand: string
-  teachingGoal: string
-  route: '清一色' | '七对自摸' | '普通自摸' | '素胡走人'
-  condition: string
-  nextDraws: string
-}
-
-const WIDE_BED_SCENARIOS: readonly WideBedScenario[] = [
-  {
-    id: 'qingyise-window', title: '万门集中 · 上牌顺', startingHand: '112345567899万 15筒', route: '清一色',
-    condition: '三家对手缺万；你有 11 张万子且搭子连贯，万门成为宽床，牌墙前段仍够长。',
-    teachingGoal: '观察万子是否连续进张。只有速度没塌、对手未抢跑时，才继续向清一色投资。', nextDraws: '6万、7万、2万',
-  },
-  {
-    id: 'qiduizi-window', title: '对子密集 · 万门宽床', startingHand: '112233445566万 78条', route: '七对自摸',
-    condition: '三家对手缺万；你有六组万子对子，万门宽床虽大，但顺子路线反而会拆对子。',
-    teachingGoal: '优先守住对子并找第七对；不要因为万门宽床就机械追清一色。', nextDraws: '7条、8条、7万',
-  },
-  {
-    id: 'ordinary-selfdraw', title: '两门都活 · 万门未够集中', startingHand: '12345678万 345678条', route: '普通自摸',
-    condition: '三家对手缺万；你有万门宽床，但另一门搭子也很顺，万门集中度不够。',
-    teachingGoal: '先把宽叫和自摸效率做出来；若万子不连续补强，就别硬把条子全部拆掉。', nextDraws: '2条、9万、6条',
-  },
-  {
-    id: 'cash-out', title: '对手抢跑 · 万门上牌差', startingHand: '1234569万 3456789条', route: '素胡走人',
-    condition: '三家对手缺万；你有万门宽床但孤张多，对手会较早副露且万子补张不连贯。',
-    teachingGoal: '确认对手抢跑后收缩目标：先下叫、先兑现，不为低概率大牌继续拖巡。', nextDraws: '1条、9条、4万',
-  },
-  {
-    id: 'late-push', title: '万门成型边缘 · 再推一巡', startingHand: '112345678899万 46条', route: '清一色',
-    condition: '三家对手缺万；你已有十二张万子但还有一组条子搭，清一色临门时要比较速度与收益。',
-    teachingGoal: '不是万子多就必冲：只有补张仍连贯、叫口不缩水时，才值得再推一巡。', nextDraws: '7万、5条、2万',
-  },
-  {
-    id: 'defensive-convert', title: '宽床受阻 · 两门转和', startingHand: '123456789万 34567条', route: '普通自摸',
-    condition: '三家对手缺万；万门数量够多，但条子已有完整搭子，且中盘可能出现副露压力。',
-    teachingGoal: '宽床不是单行道：保住两门连接，先做宽叫；对手推进后能立刻把进攻转换为安全。', nextDraws: '8条、4万、6条',
-  },
-]
-
 export function getWideBedScenario(seed: number): WideBedScenario {
   return WIDE_BED_SCENARIOS[Math.abs(seed) % WIDE_BED_SCENARIOS.length]
 }
@@ -246,8 +270,12 @@ function setTrainingMeld(player: PlayerState, pool: TileInstance[], kind: 'peng'
  */
 function varySpecialTrainingPresentation(state: GameState, seed: number): GameState {
   const suitPermutations: readonly (readonly TileType[])[] = [
-    ['万', '条', '筒'], ['万', '筒', '条'], ['条', '万', '筒'],
-    ['条', '筒', '万'], ['筒', '万', '条'], ['筒', '条', '万'],
+    ['万', '条', '筒'],
+    ['万', '筒', '条'],
+    ['条', '万', '筒'],
+    ['条', '筒', '万'],
+    ['筒', '万', '条'],
+    ['筒', '条', '万'],
   ]
   const variant = Math.abs(seed)
   const sourceSuits: readonly TileType[] = ['万', '条', '筒']
@@ -266,9 +294,10 @@ function varySpecialTrainingPresentation(state: GameState, seed: number): GameSt
       remapTile(tile)
     for (const tile of player.discards)
       remapTile(tile)
-    for (const meld of player.melds)
+    for (const meld of player.melds) {
       for (const tile of meld.tiles)
         remapTile(tile)
+    }
     if (player.dingque !== null)
       player.dingque = suitMap.get(player.dingque)!
     player.hand = sortTiles(player.hand)
@@ -281,7 +310,10 @@ function createRandomWideTenpaiTraining(seed: number, styles: readonly AIStyle[]
   const random = createSeededRandom(seed)
   const pool = shuffleTiles(createTileSet(), random)
   const players: [PlayerState, PlayerState, PlayerState, PlayerState] = [
-    createPlayer(0, null), createPlayer(1, styles[0]), createPlayer(2, styles[1]), createPlayer(3, styles[2]),
+    createPlayer(0, null),
+    createPlayer(1, styles[0]),
+    createPlayer(2, styles[1]),
+    createPlayer(3, styles[2]),
   ]
   // 先确定要练的“听口形状”，再从整副牌随机落位；题目变化来自实际手牌、河牌与墙牌，而不是换皮。
   const primarySuit = (['万', '条', '筒'] as const)[random.nextInt(3)]
@@ -309,9 +341,21 @@ function createRandomWideTenpaiTraining(seed: number, styles: readonly AIStyle[]
   players[2].discards = revealed.slice(15, 30)
   players[3].discards = revealed.slice(30, 45)
   return {
-    rulesVersion: MILESTONE_1_RULES.version, seed, phase: 'discarding', players, wall, dealer: 0, currentPlayer: 0,
-    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null, lastDrawWasReplacement: false, lastDrawWasLastTile: false,
-    responseWindow: null, kongContext: null, endReason: null, nextEventSequence: 1, events: [],
+    rulesVersion: MILESTONE_1_RULES.version,
+    seed,
+    phase: 'discarding',
+    players,
+    wall,
+    dealer: 0,
+    currentPlayer: 0,
+    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null,
+    lastDrawWasReplacement: false,
+    lastDrawWasLastTile: false,
+    responseWindow: null,
+    kongContext: null,
+    endReason: null,
+    nextEventSequence: 1,
+    events: [],
   }
 }
 
@@ -319,18 +363,38 @@ function createRandomJingoudiaoTraining(seed: number, styles: readonly AIStyle[]
   const random = createSeededRandom(seed)
   const pool = shuffleTiles(createTileSet(), random)
   const players: [PlayerState, PlayerState, PlayerState, PlayerState] = [
-    createPlayer(0, null), createPlayer(1, styles[0]), createPlayer(2, styles[1]), createPlayer(3, styles[2]),
+    createPlayer(0, null),
+    createPlayer(1, styles[0]),
+    createPlayer(2, styles[1]),
+    createPlayer(3, styles[2]),
   ]
   // 先确定四副碰的骨架，再把两张候选、十张牌墙和公开河牌从同一副108张牌中真实扣除。
   // 骨架、候选单吊和公开存量均由题库编号共同决定，避免单纯换花色或数字平移。
   const meldSuit = (['万', '条', '筒'] as const)[random.nextInt(3)]
   const candidateSuit = (['万', '条', '筒'] as const).filter(suit => suit !== meldSuit)[random.nextInt(2)]
   const meldPatterns = [
-    [1, 2, 4, 7], [1, 3, 5, 8], [2, 3, 6, 9], [2, 4, 5, 7], [1, 4, 6, 8],
-    [2, 5, 7, 9], [1, 3, 6, 7], [3, 4, 6, 9], [1, 2, 6, 8], [3, 5, 7, 8],
+    [1, 2, 4, 7],
+    [1, 3, 5, 8],
+    [2, 3, 6, 9],
+    [2, 4, 5, 7],
+    [1, 4, 6, 8],
+    [2, 5, 7, 9],
+    [1, 3, 6, 7],
+    [3, 4, 6, 9],
+    [1, 2, 6, 8],
+    [3, 5, 7, 8],
   ] as const
   const candidatePatterns = [
-    [1, 4], [1, 7], [2, 5], [2, 8], [3, 6], [3, 9], [4, 7], [4, 9], [5, 8], [6, 9],
+    [1, 4],
+    [1, 7],
+    [2, 5],
+    [2, 8],
+    [3, 6],
+    [3, 9],
+    [4, 7],
+    [4, 9],
+    [5, 8],
+    [6, 9],
   ] as const
   const meldValues = meldPatterns[random.nextInt(meldPatterns.length)]
   const candidates = candidatePatterns[random.nextInt(candidatePatterns.length)]
@@ -391,9 +455,21 @@ function createRandomJingoudiaoTraining(seed: number, styles: readonly AIStyle[]
   players[2].discards = revealed.slice(15, 30)
   players[3].discards = revealed.slice(30, 45)
   return {
-    rulesVersion: MILESTONE_1_RULES.version, seed, phase: 'discarding', players, wall, dealer: 0, currentPlayer: 0,
-    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null, lastDrawWasReplacement: false, lastDrawWasLastTile: false,
-    responseWindow: null, kongContext: null, endReason: null, nextEventSequence: 1, events: [],
+    rulesVersion: MILESTONE_1_RULES.version,
+    seed,
+    phase: 'discarding',
+    players,
+    wall,
+    dealer: 0,
+    currentPlayer: 0,
+    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null,
+    lastDrawWasReplacement: false,
+    lastDrawWasLastTile: false,
+    responseWindow: null,
+    kongContext: null,
+    endReason: null,
+    nextEventSequence: 1,
+    events: [],
   }
 }
 
@@ -401,7 +477,10 @@ function createRandomEndgameCountTraining(seed: number, styles: readonly AIStyle
   const random = createSeededRandom(seed)
   const pool = shuffleTiles(createTileSet(), random)
   const players: [PlayerState, PlayerState, PlayerState, PlayerState] = [
-    createPlayer(0, null), createPlayer(1, styles[0]), createPlayer(2, styles[1]), createPlayer(3, styles[2]),
+    createPlayer(0, null),
+    createPlayer(1, styles[0]),
+    createPlayer(2, styles[1]),
+    createPlayer(3, styles[2]),
   ]
   // 末十张的关键不是背一副牌，而是从随机的两门手牌、45 张公开河牌和 10 张牌墙里重新扣张。
   const playerDingque = (['万', '条', '筒'] as const)[random.nextInt(3)]
@@ -417,9 +496,21 @@ function createRandomEndgameCountTraining(seed: number, styles: readonly AIStyle
   players[2].discards = revealed.slice(15, 30)
   players[3].discards = revealed.slice(30, 45)
   return {
-    rulesVersion: MILESTONE_1_RULES.version, seed, phase: 'discarding', players, wall, dealer: 0, currentPlayer: 0,
-    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null, lastDrawWasReplacement: false, lastDrawWasLastTile: false,
-    responseWindow: null, kongContext: null, endReason: null, nextEventSequence: 1, events: [],
+    rulesVersion: MILESTONE_1_RULES.version,
+    seed,
+    phase: 'discarding',
+    players,
+    wall,
+    dealer: 0,
+    currentPlayer: 0,
+    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null,
+    lastDrawWasReplacement: false,
+    lastDrawWasLastTile: false,
+    responseWindow: null,
+    kongContext: null,
+    endReason: null,
+    nextEventSequence: 1,
+    events: [],
   }
 }
 
@@ -448,7 +539,10 @@ export function createSpecialTrainingGame(seed: number, kind: SpecialTrainingKin
     return createRandomJingoudiaoTraining(librarySeed, libraryStyles)
   }
   const players: [PlayerState, PlayerState, PlayerState, PlayerState] = [
-    createPlayer(0, null), createPlayer(1, styles[0]), createPlayer(2, styles[1]), createPlayer(3, styles[2]),
+    createPlayer(0, null),
+    createPlayer(1, styles[0]),
+    createPlayer(2, styles[1]),
+    createPlayer(3, styles[2]),
   ]
   const selectedScenarioIndex = scenarioIndex === undefined
     ? Math.abs(seed) % getSpecialTrainingScenarioCount(kind)
@@ -459,7 +553,7 @@ export function createSpecialTrainingGame(seed: number, kind: SpecialTrainingKin
     // 你则定缺筒并持有万门宽床：牌河为空、无人副露，从第一巡按来牌与对手推进决定路线。
     players[0].hand = dealTrainingHand(pool, scenario.startingHand)
     // `draw` 从数组尾部取牌；脚本只确保局面会出现信息，不把一条路线直接喂到你嘴边。
-    // 前四摸分别给上家、对家、下家、你；你每次摸到的是第 4、8 张。
+    // 前四摸分别给下家、对家、上家、你（引擎按 (from+1)%4 轮转）；你每次摸到的是第 4、8 张。
     const drawScript = scenario.id === 'qingyise-window'
       ? '57条 6筒 8条 6万 1条 2万 4条 7万'
       : scenario.id === 'qiduizi-window'
@@ -526,9 +620,21 @@ export function createSpecialTrainingGame(seed: number, kind: SpecialTrainingKin
     }
   }
   const state: GameState = {
-    rulesVersion: MILESTONE_1_RULES.version, seed, phase: 'discarding', players, wall: pool, dealer: 0, currentPlayer: 0,
-    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null, lastDrawWasReplacement: false, lastDrawWasLastTile: false,
-    responseWindow: null, kongContext: null, endReason: null, nextEventSequence: 1, events: [],
+    rulesVersion: MILESTONE_1_RULES.version,
+    seed,
+    phase: 'discarding',
+    players,
+    wall: pool,
+    dealer: 0,
+    currentPlayer: 0,
+    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null,
+    lastDrawWasReplacement: false,
+    lastDrawWasLastTile: false,
+    responseWindow: null,
+    kongContext: null,
+    endReason: null,
+    nextEventSequence: 1,
+    events: [],
   }
   return randomizePresentation ? varySpecialTrainingPresentation(state, seed) : state
 }

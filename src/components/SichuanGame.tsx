@@ -34,7 +34,9 @@ interface SichuanGameProps {
   onStartTraining: (kind: SpecialTrainingKind) => void
 }
 
-const PLAYER_POSITIONS = ['south', 'west', 'north', 'east'] as const
+// 与引擎轮转一致：出牌后 (from+1)%4 先响应 = 下家。川麻逆时针、下家在右手边，
+// 故玩家 1（下家）摆 east(右)、玩家 3（上家）摆 west(左)、玩家 2（对家）摆 north(上)。
+const PLAYER_POSITIONS = ['south', 'east', 'north', 'west'] as const
 
 function tileLabel(tile: Pick<TileInstance, 'type' | 'value'>): string {
   return `${tile.value}${tile.type}`
