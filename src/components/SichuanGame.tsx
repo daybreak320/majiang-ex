@@ -218,12 +218,6 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
               ? '请选择动作'
               : '等待 AI 行动…'}
         </div>
-        {blockedActions.length > 0 && (
-          <span className="dingque-lock-hint" title={`定缺的「${player.dingque}」是你要放弃的一门：它只能被打出去，不能被碰/杠（留下做刻子等于定缺白定）。除了这一门，其他任何牌都不受限制，随时可碰可杠。`}>
-            {player.dingque}
-            是缺门 · 缺门的牌不能碰/杠（其他门不受限）
-          </span>
-        )}
         {otherActions.map((action, index) => (
           <button
             className={action.type === 'hu' ? 'win-action' : 'secondary-action'}
@@ -233,17 +227,14 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
             {actionLabel(action, state)}
           </button>
         ))}
-        {/* 被定缺规则挡下的动作：按钮照常出现但点不了，让"为什么不能碰"一眼可见 */}
+        {/* 缺门牌对应的碰/杠：按钮照常出现，只是点不了 */}
         {blockedActions.map((action, index) => (
           <button
             className="secondary-action blocked-action"
             key={`blocked-${action.type}-${'kind' in action ? action.kind : ''}-${'tileId' in action ? action.tileId : index}`}
             disabled
-            title={`这张是缺门「${player.dingque}」：定缺的牌只能打出去，不能碰/杠`}
           >
             {actionLabel(action, state)}
-            {' '}
-            · 缺门牌不能鸣
           </button>
         ))}
         <button className="primary-action" disabled={selectedAction === undefined} onClick={() => selectedAction && submit(selectedAction)}>
