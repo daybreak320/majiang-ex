@@ -3,6 +3,7 @@ import type { SpecialTrainingKind } from '../game/core'
 import type { TenpaiMemory } from '../game/guessWin'
 import type { GameHistoryEntry } from '../game/persistence'
 import type { GameState, LegalAction, OpponentConfig, PlayerId, TileInstance } from '../game/types'
+import type { DecisionTheme } from '../knowledge/xiaoshiTypes'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
 import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildImmediateDiscardFeedback, buildPengLesson } from '../game/assistant'
@@ -19,8 +20,18 @@ import { recordDecisionEvents } from '../training/decisionEvents'
 import { recordSpecialTrainingCompleted } from '../utils/playerProfile'
 import { GuessWinPanel } from './GuessWinPanel'
 import { MajiangTile } from './MajiangTile'
+import { MentorDissentInline } from './MentorDissentInline'
 import { MentorGrowthPanel } from './MentorGrowthPanel'
 import { XiaoshiMentorPanel } from './XiaoshiMentorPanel'
+
+/** coach.mode → 决策主题：把用户对教练判断的异议，绑到同类破晓哥规则上 */
+function themeFromCoachMode(mode: string): DecisionTheme | null {
+  if (mode === 'warning')
+    return '防守与逃跑'
+  if (mode === 'observe')
+    return '形势与信息'
+  return null
+}
 
 interface SichuanGameProps {
   seed: number
@@ -342,6 +353,7 @@ function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedT
           练习：
           {displayedLesson?.nextQuestion ?? analysis.coach.practice}
         </small>
+        <MentorDissentInline theme={themeFromCoachMode(analysis.coach.mode)} />
       </section>
       {huLesson !== null && (
         <button

@@ -104,11 +104,19 @@ describe('makeMentorResponse：导师也要有自己的不同意见', () => {
     expect(r.text).toContain('你说服我了')
   })
 
-  it('未绑定规则 → partial 且无 basis（拿不出对等依据）', () => {
-    const r = makeMentorResponse({ ruleId: null, theme: '防守与逃跑' }, '通用角度')
+  it('既无规则也无主题 → partial 且无 basis（拿不出对等依据）', () => {
+    const r = makeMentorResponse({ ruleId: null, theme: null }, '通用角度')
     expect(r.stance).toBe('partial')
     expect(r.basis).toBeUndefined()
     expect(r.text).toContain('没绑定到具体规则')
+  })
+
+  it('按主题绑定 → 取该主题最高置信度规则当依据（viaTheme）', () => {
+    const r = makeMentorResponse({ ruleId: null, theme: '防守与逃跑' }, '这手我宁可保本')
+    expect(r.basis?.viaTheme).toBe(true)
+    expect(r.basis?.ruleName).toBeTruthy()
+    expect(r.basis?.confidence).toBeGreaterThan(0)
+    expect(['agree', 'partial', 'hold']).toContain(r.stance)
   })
 
   it('addPerspective 落盘时带上 stance/mentorLine/mentorBasis', () => {

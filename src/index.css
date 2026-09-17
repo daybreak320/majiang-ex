@@ -253,6 +253,9 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .stance-partial { color: #f4d486; border: 1px solid #6b5a2e; background: #221d0f; }
 .stance-hold { color: #fca5a5; border: 1px solid #6b2e2e; background: #2a1414; }
 .discuss-basis { margin: 0 0 .4rem; color: #8fb4aa; font-size: .68rem; line-height: 1.6; }
+.xiaoshi-dissent-inline { margin-top: .45rem; }
+.xiaoshi-mentor-reply { margin-top: .45rem; padding: .5rem .6rem; border-radius: 10px; border-left: 3px solid #f4d486; background: #211d0f; }
+.xiaoshi-mentor-reply > p { margin: .3rem 0 0; color: #e7dcc0; font-size: .76rem; line-height: 1.65; }
 .xiaoshi-composer-general { margin-top: .2rem; }
 .game-shell { min-height: 100vh; display: flex; flex-direction: column; padding: .6rem 1rem; background: radial-gradient(circle at 50% 40%, #174d43, #071715 65%); }
 .game-topbar { flex: none; max-width: 1440px; width: 100%; margin: 0 auto .6rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }.game-topbar strong { display: block; margin-top: .25rem; font-size: 1.15rem; }.game-topbar > div:last-child { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }.training-scenario-progress { align-self: flex-start; width: fit-content; margin: -.2rem auto .45rem; padding: .26rem .55rem; color: #bff5e5; border: 1px solid #5eead455; border-radius: 999px; background: #093b32; font-size: .7rem; font-weight: 850; letter-spacing: .04em; }.assistant-toggle { min-height: 36px; display: inline-flex; align-items: center; gap: .45rem; padding: .35rem .65rem; color: #d9eee8; border: 1px solid #ffffff24; border-radius: 8px; background: #ffffff0d; cursor: pointer; font-size: .82rem; font-weight: 800; }

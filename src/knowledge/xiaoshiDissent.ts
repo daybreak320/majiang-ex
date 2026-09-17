@@ -15,6 +15,8 @@ export interface MentorBasis {
   boundary?: string
   rationale?: string
   evidenceCount?: number
+  /** 依据是按主题匹配到的（非用户显式绑定某条规则） */
+  viaTheme?: boolean
 }
 
 /** 导师对一条用户异议的回应（含立场 + 依据） */
@@ -99,6 +101,19 @@ export function savePerspectives(list: UserPerspective[]): void {
   }
 }
 
+/** 跨面板同步事件：任一入口写入后广播，导师面板据此重读（避免多面板状态不一致） */
+const CHANGE_EVENT = 'xiaoshi:perspectives-changed'
+
+function emitChange(): void {
+  try {
+    if (typeof window !== 'undefined')
+      window.dispatchEvent(new Event(CHANGE_EVENT))
+  }
+  catch {
+    // 无 window / 派发失败时静默，不阻断对局
+  }
+}
+
 function makeId(): string {
   return `up_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -130,7 +145,14 @@ export function makeMentorResponse(
   angle: { ruleId: string | null, theme: DecisionTheme | null },
   snippet: string,
 ): MentorResponse {
-  const rule = angle.ruleId === null ? undefined : XIAOSHI_RULES.find(r => r.id === angle.ruleId)
+  // 绑定顺序：指定规则 → 该主题下置信度最高的一条 → 无
+  const rule = angle.ruleId !== null
+    ? XIAOSHI_RULES.find(r => r.id === angle.ruleId)
+    : angle.theme !== null
+      ? [...XIAOSHI_RULES]
+          .filter(r => r.theme === angle.theme)
+          .sort((a, b) => b.confidence - a.confidence)[0]
+      : undefined
   if (!rule) {
     const scope = angle.theme ? `「${angle.theme}」` : '这类局面'
     return {
@@ -147,6 +169,7 @@ export function makeMentorResponse(
     ...(rule.boundary ? { boundary: rule.boundary } : {}),
     rationale: rule.rationale,
     evidenceCount: ev,
+    ...(angle.ruleId === null ? { viaTheme: true } : {}),
   }
   if (rule.confidence >= 0.85) {
     return {
@@ -202,6 +225,7 @@ export function addPerspective(input: NewPerspective): UserPerspective {
   const list = loadPerspectives()
   list.push(item)
   savePerspectives(list)
+  emitChange()
   return item
 }
 
@@ -213,6 +237,7 @@ export function setPerspectiveStatus(id: string, status: PerspectiveStatus): Use
     return null
   list[idx] = { ...list[idx], status }
   savePerspectives(list)
+  emitChange()
   return list[idx]
 }
 
@@ -228,4 +253,4 @@ export function toUserAngles(list: UserPerspective[]): UserAngle[] {
   }))
 }
 
-export { MAX_ANGLES_PER_CARD }
+export { CHANGE_EVENT, MAX_ANGLES_PER_CARD }

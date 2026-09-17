@@ -1,23 +1,23 @@
 import type { GameState } from '../game/types'
 import type { PerspectiveStatus, UserPerspective } from '../knowledge/xiaoshiDissent'
-import type { DecisionTheme, MentorStance } from '../knowledge/xiaoshiTypes'
+import type { DecisionTheme } from '../knowledge/xiaoshiTypes'
 // 理由解释面板（UI 层）
 // 与出牌建议并列展示：主线教练给主决策，这里只补经验规则、依据与边界——
 // 命中规则时输出一句话观点 + 理由原话 + 边界条件 + 可核验证据；未命中则保持安静。
 // 赛中互动：每张建议可「我有不同意见」开聊，导师把你的角度记进 localStorage，
 // 之后同类局面会多出一个「你的思考角度」；底部「讨论记录」可标状态形成相互成长闭环。
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { buildXiaoshiAdvice } from '../knowledge/xiaoshiAdvisor'
 import { XIAOSHI_CASES } from '../knowledge/xiaoshiCases'
 import {
   addPerspective,
+  CHANGE_EVENT,
   loadPerspectives,
-
   setPerspectiveStatus,
   toUserAngles,
-
 } from '../knowledge/xiaoshiDissent'
 import { XIAOSHI_RULES } from '../knowledge/xiaoshiRules'
+import { STANCE_LABEL } from './MentorDissentInline'
 
 const WINDOW_LABEL: Record<'response' | 'discard' | 'any', string> = {
   response: '碰/杠/胡响应',
@@ -31,13 +31,6 @@ const STATUS_LABEL: Record<PerspectiveStatus, string> = {
   kept: '保留异议',
 }
 
-/** 导师立场标签——导师也要有自己的不同意见，不当应声虫 */
-const STANCE_LABEL: Record<MentorStance, string> = {
-  agree: '导师认同',
-  partial: '导师分情况',
-  hold: '导师有不同意见',
-}
-
 export function XiaoshiMentorPanel({ state }: { state: GameState }) {
   const [perspectives, setPerspectives] = useState<UserPerspective[]>(() => loadPerspectives())
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -47,6 +40,15 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
 
   const angles = useMemo(() => toUserAngles(perspectives), [perspectives])
   const advice = useMemo(() => buildXiaoshiAdvice(state, 0, { userAngles: angles }), [state, angles])
+
+  // 其他入口（如教练卡内联异议）写入后同步重读，避免多面板状态不一致
+  useEffect(() => {
+    if (typeof window === 'undefined')
+      return
+    const reload = () => setPerspectives(loadPerspectives())
+    window.addEventListener(CHANGE_EVENT, reload)
+    return () => window.removeEventListener(CHANGE_EVENT, reload)
+  }, [])
 
   function submitDissent(ruleId: string, theme: DecisionTheme | null) {
     const text = draft.trim()
