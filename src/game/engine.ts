@@ -217,6 +217,29 @@ function responseActions(state: GameState, playerId: PlayerId): LegalAction[] {
   return actions
 }
 
+/**
+ * 缺门未清时被规则挡下的碰/明杠。
+ *  UI 用它渲染"看得见但点不了"的按钮——比直接让按钮消失更好，
+ *  否则玩家会以为"根本没这张牌可碰"，摸不清是牌不对还是规则挡了。
+ */
+export function getDingqueBlockedActions(state: GameState, playerId: PlayerId): Extract<LegalAction, { type: 'peng' | 'gang' }>[] {
+  const window = state.responseWindow
+  if (window === null || window.kind !== 'discard')
+    return []
+  if (!window.eligiblePlayers.includes(playerId) || window.choices[playerId] !== undefined)
+    return []
+  const player = state.players[playerId]
+  if (!hasUnclearedDingque(player))
+    return []
+  const matching = player.hand.filter(tile => sameTile(tile, window.tile))
+  const blocked: Extract<LegalAction, { type: 'peng' | 'gang' }>[] = []
+  if (matching.length >= 2)
+    blocked.push({ type: 'peng', tileId: window.tile.id })
+  if (matching.length >= 3)
+    blocked.push({ type: 'gang', tileId: window.tile.id, kind: 'mingGang' })
+  return blocked
+}
+
 export function getLegalActions(state: GameState, playerId: PlayerId): LegalAction[] {
   if (state.phase === 'finished')
     return []

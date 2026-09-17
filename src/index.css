@@ -619,3 +619,7 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .mentor-stage-talk b { color: #ffe9b8; font-size: .95rem; }
 .mentor-stage-talk p { margin: 0; color: #cfe4de; font-size: .84rem; line-height: 1.65; }
 .mentor-stage-talk .xiaoshi-send { align-self: flex-start; }
+
+/* 被定缺规则挡下的动作按钮：看得见、点不了 */
+.blocked-action { opacity: .55; cursor: not-allowed; border-style: dashed !important; }
+.blocked-action:disabled { color: #b9966a; border-color: #f2c66d55; }

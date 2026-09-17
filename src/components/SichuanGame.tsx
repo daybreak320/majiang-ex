@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
 import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildImmediateDiscardFeedback, buildPengLesson } from '../game/assistant'
 import { createInitialGame, createSpecialTrainingGame, getSpecialTrainingScenarioCount, getWideBedScenario, getWideTenpaiScenario, recommendDingque, SPECIAL_TRAINING_META } from '../game/core'
-import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
+import { executeCommand, getDingqueBlockedActions, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { emptyTenpaiMemory, hasAnyTingPlayer, trackStateInto } from '../game/guessWin'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
 import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, FINAL_STATE_LABELS, formatAIBehaviorTag, formatGameEvent, formatWinFanBadge, formatWinFanDetail, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
@@ -155,7 +155,7 @@ function ImmediateTenpaiHint({ candidate }: { candidate: DiscardCandidateAnalysi
   )
 }
 
-function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, legal, submit }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
+function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, blockedActions, legal, submit }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], blockedActions: Extract<LegalAction, { type: 'peng' | 'gang' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
   const player = state.players[0]
   // 定缺未清（手里还留有缺门牌）= 不能碰/明杠（引擎规则）。
   // 之前 UI 只给对手标了已清/未清，自己反而没标 → 出现"为什么碰不了"的困惑，这里补齐。
@@ -220,10 +220,10 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
               : '等待 AI 行动…'}
         </div>
         {dingqueUncleared && (
-          <span className="dingque-lock-hint" title={`定缺定的是「${player.dingque}」：这张门必须先打干净才能碰/杠，否则越碰缺门越难清，终局手里还留着缺门就是花猪`}>
-            定缺未清：
+          <span className="dingque-lock-hint" title={`定缺是一条义务：必须先把「${player.dingque}」打出去才算履行完。履行完之前不能用别人的牌鸣牌（碰 / 明杠）——否则等于义务没做完先享受权利，清缺也会被一拖再拖。暗杠是自己手里凑的、不需要别人配合，所以不受这条限制。打完「${player.dingque}」后按钮自动解锁。`}>
+            定缺未清 · 打完
             {player.dingque}
-            还没打完，先打缺门才能碰/杠（硬留到终局就是花猪）
+            才有碰/明杠资格（暗杠不受限；被挡的动作已标出）
           </span>
         )}
         {otherActions.map((action, index) => (
@@ -233,6 +233,19 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
             onClick={() => submit(action)}
           >
             {actionLabel(action, state)}
+          </button>
+        ))}
+        {/* 被定缺规则挡下的动作：按钮照常出现但点不了，让"为什么不能碰"一眼可见 */}
+        {blockedActions.map((action, index) => (
+          <button
+            className="secondary-action blocked-action"
+            key={`blocked-${action.type}-${'kind' in action ? action.kind : ''}-${'tileId' in action ? action.tileId : index}`}
+            disabled
+            title={`${actionLabel(action, state)}被定缺规则挡下：先把缺门「${player.dingque}」打完，才有碰/杠资格`}
+          >
+            {actionLabel(action, state)}
+            {' '}
+            · 定缺未清
           </button>
         ))}
         <button className="primary-action" disabled={selectedAction === undefined} onClick={() => selectedAction && submit(selectedAction)}>
@@ -1071,6 +1084,8 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   const discardActions = legal.filter((action): action is Extract<LegalAction, { type: 'discard' }> => action.type === 'discard')
   const discardIds = new Set(discardActions.map(action => action.tileId))
   const otherActions = legal.filter((action): action is Exclude<LegalAction, { type: 'discard' | 'dingque' }> => action.type !== 'discard' && action.type !== 'dingque')
+  // 缺门未清时被规则挡下的碰/明杠：渲染成禁用按钮，让规则"看得见"
+  const blockedActions = getDingqueBlockedActions(state, 0)
   const recommended = recommendDingque(state.players[0].hand)
   const wideBedScenario = trainingKind === 'attack-qingyise' ? getWideBedScenario(trainingScenarioIndex ?? seed) : null
   const wideTenpaiTraining = trainingKind === 'endgame-qingyise-tenpai' ? getWideTenpaiScenario(trainingScenarioIndex ?? seed) : null
@@ -1456,6 +1471,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
                   discardActions={discardActions}
                   discardIds={discardIds}
                   otherActions={otherActions}
+                  blockedActions={blockedActions}
                   legal={legal}
                   submit={submit}
                 />
