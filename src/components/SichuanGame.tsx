@@ -157,6 +157,9 @@ function ImmediateTenpaiHint({ candidate }: { candidate: DiscardCandidateAnalysi
 
 function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, legal, submit }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
   const player = state.players[0]
+  // 定缺未清（手里还留有缺门牌）= 不能碰/明杠（引擎规则）。
+  // 之前 UI 只给对手标了已清/未清，自己反而没标 → 出现"为什么碰不了"的困惑，这里补齐。
+  const dingqueUncleared = player.dingque !== null && player.hand.some(tile => tile.type === player.dingque)
   const analysis = useMemo(() => buildDiscardAssistant(state), [state])
   const selectedTile = player.hand.find(tile => tile.id === selectedTileId)
   const selectedCandidate = selectedTile === undefined || !discardIds.has(selectedTile.id)
@@ -180,6 +183,7 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
         <span>
           定缺
           {player.dingque ?? '—'}
+          {player.dingque !== null && (dingqueUncleared ? ' · 未清' : ' · 已清')}
         </span>
         <span>{player.hasWon ? `已胡 · ${player.winInfo?.fan ?? 0}番` : `${player.hand.length}张`}</span>
         {thinking === 0 && <span className="thinking">思考中…</span>}
@@ -215,6 +219,13 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
               ? '请选择动作'
               : '等待 AI 行动…'}
         </div>
+        {dingqueUncleared && (
+          <span className="dingque-lock-hint">
+            定缺未清 · 打完
+            {player.dingque}
+            才能碰/杠
+          </span>
+        )}
         {otherActions.map((action, index) => (
           <button
             className={action.type === 'hu' ? 'win-action' : 'secondary-action'}
