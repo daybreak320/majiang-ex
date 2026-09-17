@@ -253,4 +253,116 @@ export function toUserAngles(list: UserPerspective[]): UserAngle[] {
   }))
 }
 
+/* ───────────────────────── 导师段位 · 阶段性进阶讨论 ─────────────────────────
+ * 不同意见不是流水账：攒到一定量，导师做一次「阶段对谈」并晋升段位，
+ * 让"提异议 → 被记住 → 有回响 → 更敢提"形成循环。
+ * 分值口径（确定性、可解释）：待消化 1 / 保留异议 2 / 已纳入 3——被采纳的思考最值钱。
+ */
+
+export interface MentorProgress {
+  /** 段位序号，从 1 起 */
+  level: number
+  /** 段位名（跟破晓哥学牌的口气，不做游戏化称号堆砌） */
+  title: string
+  /** 段位分值 */
+  score: number
+  /** 下一级门槛；已到顶为 null */
+  nextThreshold: number | null
+  total: number
+  accepted: number
+  kept: number
+  open: number
+  stanceCounts: { agree: number, partial: number, hold: number }
+  /** 讨论最集中的主题（无则 null） */
+  topTheme: DecisionTheme | null
+}
+
+/** 段位门槛表：分数达标即晋升 */
+export const MENTOR_LEVELS = [
+  { threshold: 0, title: '初听牌路' },
+  { threshold: 6, title: '敢提异议' },
+  { threshold: 15, title: '交锋成习' },
+  { threshold: 30, title: '牌桌诤友' },
+  { threshold: 50, title: '棋逢对手' },
+] as const
+
+export function computeMentorProgress(list: UserPerspective[]): MentorProgress {
+  const weight: Record<PerspectiveStatus, number> = { open: 1, kept: 2, accepted: 3 }
+  const score = list.reduce((sum, p) => sum + weight[p.status], 0)
+  const stanceCounts = { agree: 0, partial: 0, hold: 0 }
+  const themeCount = new Map<DecisionTheme, number>()
+  for (const p of list) {
+    if (p.stance)
+      stanceCounts[p.stance]++
+    if (p.theme)
+      themeCount.set(p.theme, (themeCount.get(p.theme) ?? 0) + 1)
+  }
+  const topTheme = [...themeCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+  let level = 1
+  for (let i = 0; i < MENTOR_LEVELS.length; i++) {
+    if (score >= MENTOR_LEVELS[i].threshold)
+      level = i + 1
+  }
+  const next = MENTOR_LEVELS[level]
+  return {
+    level,
+    title: MENTOR_LEVELS[level - 1].title,
+    score,
+    nextThreshold: next ? next.threshold : null,
+    total: list.length,
+    accepted: list.filter(p => p.status === 'accepted').length,
+    kept: list.filter(p => p.status === 'kept').length,
+    open: list.filter(p => p.status === 'open').length,
+    stanceCounts,
+    topTheme,
+  }
+}
+
+/** 阶段对谈：晋升时的导师小结（模板化生成，确定性、有数据出处） */
+export function buildStageTalk(progress: MentorProgress): string {
+  if (progress.total === 0)
+    return '咱们还没交过手。遇到不认同的建议别憋着——你提一次，我们就多一次把道理摆到桌面上的机会。'
+  const stanceLine = `这阶段你提了 ${progress.total} 条不同意见（我认同 ${progress.stanceCounts.agree} · 分情况 ${progress.stanceCounts.partial} · 我保留 ${progress.stanceCounts.hold}），其中 ${progress.accepted} 条已纳入我的思考${progress.topTheme ? `，聊得最多的是「${progress.topTheme}」` : ''}。`
+  const holds = progress.stanceCounts.hold
+  const agrees = progress.stanceCounts.agree
+  const partials = progress.stanceCounts.partial
+  let advice: string
+  if (holds > agrees && holds >= partials) {
+    advice = '你跟我顶牛顶得最凶的地方，恰恰是最值得拆的地方——挑一条你最不服的，我们逐张牌对：它有几个实例支撑、边界在哪、你的角度在哪种局面下能反过来赢它。'
+  }
+  else if (partials >= agrees) {
+    advice = '「分情况」的判断最见功力。下一阶段别停在"我觉得要看情况"——把"什么情况下不成立"也写全，那才是能落进实战的判断。'
+  }
+  else {
+    advice = '多数时候是你说服了我，说明你的牌感已经在规则前面跑。下一阶段换个练法：出牌前先自己下结论，再看我给的建议——重点盯我们结论不一致的那几手。'
+  }
+  return `${stanceLine}${advice}`
+}
+
+/* ───────────────────────── 段位已读标记（进阶对谈只弹新的一次） ───────────────────────── */
+
+const SEEN_STAGE_KEY = 'xiaoshi:mentor-stage-seen'
+
+/** 已展示过的段位序号（0 = 从未展示） */
+export function loadSeenStage(): number {
+  const s = safeStorage()
+  if (s === null)
+    return Number.MAX_SAFE_INTEGER
+  const raw = s.getItem(SEEN_STAGE_KEY)
+  const n = raw === null ? 0 : Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 0 ? n : 0
+}
+
+export function markStageSeen(level: number): void {
+  const s = safeStorage()
+  if (s === null)
+    return
+  try {
+    s.setItem(SEEN_STAGE_KEY, String(level))
+  }
+  catch {
+    // 写不进去就静默：下次再弹一次，无伤大雅
+  }
+}
+
 export { CHANGE_EVENT, MAX_ANGLES_PER_CARD }

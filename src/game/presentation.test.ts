@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildReport } from '../review/analyzer'
 import { createInitialGame, recommendDingque } from './core'
 import { executeCommand } from './engine'
-import { buildEventTimeline, buildGameReview, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, formatAIBehaviorTag, formatGameEvent, recommendTraining } from './presentation'
+import { buildEventTimeline, buildGameReview, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, formatAIBehaviorTag, formatGameEvent, formatWinFanBadge, formatWinFanDetail, recommendTraining } from './presentation'
 
 function transfer(sequence: number, from: 0 | 1 | 2 | 3, to: 0 | 1 | 2 | 3, amount: number, reason: Extract<GameEvent, { type: 'score_transferred' }>['reason']): Extract<GameEvent, { type: 'score_transferred' }> {
   return { sequence, type: 'score_transferred', from, to, amount, reason, sourceEventSequence: sequence }
@@ -111,7 +111,7 @@ describe('结算页投影', () => {
     state.events = [
       transfer(1, 1, 0, 2, 'kong'),
       transfer(2, 0, 2, 1, 'kong'),
-      { sequence: 3, type: 'player_won', playerId: 2, info: { tile, fromPlayer: 0, kind: 'discard', fan: 1, points: 2, special: [] } },
+      { sequence: 3, type: 'player_won', playerId: 2, info: { tile, fromPlayer: 0, kind: 'discard', baseFan: 1, fan: 1, points: 2, special: [] } },
       { sequence: 4, type: 'final_settlement_started' },
     ]
 
@@ -246,5 +246,38 @@ describe('结算页 · 查叫解释', () => {
     expect(summary.players[2].finalState).toBe('won')
     expect(summary.players[2].readyWaits).toEqual([])
     expect(summary.players[2].highestPoints).toBe(0)
+  })
+})
+
+describe('番数出处', () => {
+  it('海底捞月在徽标与明细中可见，能看出基础番与加番', () => {
+    const badge = formatWinFanBadge({ baseFan: 2, fan: 3, special: ['selfDraw', 'lastTileDraw'] })
+    expect(badge).toContain('3番')
+    expect(badge).toContain('海底捞月')
+
+    const detail = formatWinFanDetail({ baseFan: 2, fan: 3, special: ['selfDraw', 'lastTileDraw'] })
+    expect(detail).toContain('基础 2')
+    expect(detail).toContain('海底捞月 1')
+    expect(detail).toContain('= 3番')
+    expect(detail).toContain('自摸')
+  })
+
+  it('撞到封顶时明确说明不再涨番', () => {
+    const detail = formatWinFanDetail({ baseFan: 4, fan: 5, special: ['selfDraw', 'lastTileDraw'] })
+    expect(detail).toContain('封顶')
+    expect(detail).toContain('= 5番')
+    expect(formatWinFanBadge({ baseFan: 4, fan: 5, special: ['selfDraw', 'lastTileDraw'] })).toContain('封顶')
+  })
+
+  it('未胡与普通点炮胡的兜底文案', () => {
+    expect(formatWinFanDetail(null)).toBe('未胡')
+    expect(formatWinFanBadge(null)).toBe('0番')
+    expect(formatWinFanDetail({ baseFan: 1, fan: 1, special: [] })).toContain('点炮胡')
+  })
+
+  it('结算页投影（缺 baseFan）也能按 总番-加番 推回基础番', () => {
+    const detail = formatWinFanDetail({ baseFan: null, fan: 3, special: ['lastTileDiscard'] })
+    expect(detail).toContain('基础 2')
+    expect(detail).toContain('海底炮 1')
   })
 })

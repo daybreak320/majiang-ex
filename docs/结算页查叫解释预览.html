@@ -1,3 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>结算页 · 查叫关系 样式预览</title>
+<style>
+body { margin: 0; padding: 2rem 1rem; background: #04120f; color: #e7f5f1; font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+.wrap { max-width: 860px; margin: auto; }
+.page-head h1 { margin: 0 0 .4rem; font-size: 1.6rem; }
+.page-head p { margin: 0 0 2rem; color: #8eaaa3; font-size: .88rem; line-height: 1.6; }
+.case { margin-bottom: 2.5rem; }
+.case-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.case-head h2 { margin: 0; font-size: 1.05rem; color: #65e5c1; }
+.case-head span { color: #7d9c95; font-size: .74rem; }
+.case-hint { margin: .35rem 0 .8rem; color: #9dbab3; font-size: .84rem; line-height: 1.6; }
 @import "tailwindcss";
 
 @font-face {
@@ -619,3 +635,81 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .mentor-stage-talk b { color: #ffe9b8; font-size: .95rem; }
 .mentor-stage-talk p { margin: 0; color: #cfe4de; font-size: .84rem; line-height: 1.65; }
 .mentor-stage-talk .xiaoshi-send { align-self: flex-start; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-head">
+    <h1>结算页 · 查叫关系</h1>
+    <p>下线为真实引擎跑局结果（非手搓数据），只取四种典型终局，用来验收「为什么没有查叫扣分」的解释是否到位。上线产品的样式与本页完全一致。</p>
+  </div>
+  <section class="case">
+        <div class="case-head"><h2>A · 正常查叫（有人听、有人没听）</h2><span>seed 1 · 牌墙摸完 · 查叫流水 1 笔</span></div>
+        <p class="case-hint">未听者按听牌方最高叫口赔付，流水照常出现在下方明细里。</p>
+        <div class="settlement-flow">
+          <section class="settlement-card">
+            <h3>终局结算</h3>
+            <ol class="transfer-list"><li><span>#354 先跑为敬 → 你</span><strong>8 分</strong></li></ol>
+          </section>
+          <section class="settlement-card ready-settlement">
+            <h3>查叫关系</h3>
+            <div class="ready-status-row">
+            <span class="ready-status ready-status-ready"><b>你</b><small>听 1筒/2筒/3筒/4筒</small></span>
+          <span class="ready-status ready-status-won"><b>做大做强</b><small>已胡</small></span>
+          <span class="ready-status ready-status-won"><b>搞死搞残</b><small>已胡</small></span>
+          <span class="ready-status ready-status-notReady"><b>先跑为敬</b><small>未听</small></span>
+            </div>
+            <div class="ready-relations">
+            <div>
+              <span>先跑为敬<small>未听</small></span>
+              <strong>赔付 8 分</strong>
+              <span>你<small>听牌方</small></span>
+            </div>
+          </div>
+          </section>
+        </div>
+      </section>
+      <section class="case">
+        <div class="case-head"><h2>B · 未胡几家都没下叫 → 没有叫口可收赔</h2><span>seed 15 · 牌墙摸完 · 查叫流水 0 笔</span></div>
+        <p class="case-hint">这正是你遇到的那种局：没人听牌，查叫无从发生，所以一分不扣。</p>
+        <div class="settlement-flow">
+          <section class="settlement-card">
+            <h3>终局结算</h3>
+            <ol class="transfer-list"><li><span>#356 搞死搞残 → 你</span><strong>2 分</strong></li><li><span>#357 搞死搞残 → 做大做强</span><strong>2 分</strong></li><li><span>#358 搞死搞残 → 先跑为敬</span><strong>2 分</strong></li></ol>
+          </section>
+          <section class="settlement-card ready-settlement">
+            <h3>查叫关系</h3>
+            <div class="ready-status-row">
+            <span class="ready-status ready-status-notReady"><b>你</b><small>未听</small></span>
+          <span class="ready-status ready-status-notReady"><b>做大做强</b><small>未听</small></span>
+          <span class="ready-status ready-status-notReady"><b>搞死搞残</b><small>未听</small></span>
+          <span class="ready-status ready-status-notReady"><b>先跑为敬</b><small>未听</small></span>
+            </div>
+            <p class="ready-note">未胡的 4 家都没下叫，没有叫口可收赔——查叫只发生在「有人听牌、有人没听」之间，所以本局没有查叫流水。</p>
+          </section>
+        </div>
+      </section>
+      <section class="case">
+        <div class="case-head"><h2>D · 只剩 1 家未胡 → 没有赔付对象</h2><span>seed 8 · 三家已胡 · 查叫流水 0 笔</span></div>
+        <p class="case-hint">其余三家都已胡，查叫失去对手方，本局不做查叫。</p>
+        <div class="settlement-flow">
+          <section class="settlement-card">
+            <h3>终局结算</h3>
+            <p class="ready-note">只剩 1 家未胡，没有赔付对象，本局不产生查叫。</p>
+          </section>
+          <section class="settlement-card ready-settlement">
+            <h3>查叫关系</h3>
+            <div class="ready-status-row">
+            <span class="ready-status ready-status-won"><b>你</b><small>已胡</small></span>
+          <span class="ready-status ready-status-won"><b>做大做强</b><small>已胡</small></span>
+          <span class="ready-status ready-status-ready"><b>搞死搞残</b><small>听 4筒</small></span>
+          <span class="ready-status ready-status-won"><b>先跑为敬</b><small>已胡</small></span>
+            </div>
+            <p class="ready-note">只剩 1 家未胡，没有赔付对象，本局不产生查叫。</p>
+          </section>
+        </div>
+      </section>
+</div>
+</body>
+</html>

@@ -32,6 +32,8 @@ export interface WinInfo {
   tile: TileInstance
   fromPlayer: PlayerId | null
   kind: WinKind
+  /** 胡牌牌型本身的基础番（不含海底/杠开等特殊加番） */
+  baseFan: number
   fan: number
   points: number
   special: SpecialWinKind[]

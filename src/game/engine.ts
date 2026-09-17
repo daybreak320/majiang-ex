@@ -330,6 +330,7 @@ function recordWin(state: GameState, playerId: PlayerId, option: HuOption, tile:
     tile,
     fromPlayer,
     kind,
+    baseFan: option.score.baseFan,
     fan: option.score.scoringFan,
     points: option.score.points,
     special: option.special,

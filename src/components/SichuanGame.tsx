@@ -11,7 +11,7 @@ import { createInitialGame, createSpecialTrainingGame, getSpecialTrainingScenari
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { emptyTenpaiMemory, hasAnyTingPlayer, trackStateInto } from '../game/guessWin'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
-import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, FINAL_STATE_LABELS, formatAIBehaviorTag, formatGameEvent, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
+import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, FINAL_STATE_LABELS, formatAIBehaviorTag, formatGameEvent, formatWinFanBadge, formatWinFanDetail, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
 import { buildStrategicReminder, detectOpponentThreats, inferEndgameDefense } from '../game/strategy'
 import { getAIThinkingProfile, getTurnTimerDuration, shouldAdvanceAI } from '../game/ui'
 import { goldenLineLabel } from '../knowledge/mahjongTheory'
@@ -81,7 +81,7 @@ function PlayerPanel({ state, playerId, thinking }: { state: GameState, playerId
           定缺
           <b>{player.dingque ?? '—'}</b>
         </span>
-        <span>{player.hasWon ? `已胡 · ${player.winInfo?.fan ?? 0}番` : `${player.hand.length}张`}</span>
+        <span>{player.hasWon ? `已胡 · ${formatWinFanBadge(player.winInfo)}` : `${player.hand.length}张`}</span>
         {thinking === playerId && <span className="thinking">思考中…</span>}
       </div>
       {player.melds.length > 0 && (
@@ -185,7 +185,7 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
           {player.dingque ?? '—'}
           {player.dingque !== null && (dingqueUncleared ? ' · 未清' : ' · 已清')}
         </span>
-        <span>{player.hasWon ? `已胡 · ${player.winInfo?.fan ?? 0}番` : `${player.hand.length}张`}</span>
+        <span>{player.hasWon ? `已胡 · ${formatWinFanBadge(player.winInfo)}` : `${player.hand.length}张`}</span>
         {thinking === 0 && <span className="thinking">思考中…</span>}
       </div>
       {player.melds.length > 0 && (
@@ -220,10 +220,10 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
               : '等待 AI 行动…'}
         </div>
         {dingqueUncleared && (
-          <span className="dingque-lock-hint">
-            定缺未清 · 打完
+          <span className="dingque-lock-hint" title={`定缺定的是「${player.dingque}」：这张门必须先打干净才能碰/杠，否则越碰缺门越难清，终局手里还留着缺门就是花猪`}>
+            定缺未清：
             {player.dingque}
-            才能碰/杠
+            还没打完，先打缺门才能碰/杠（硬留到终局就是花猪）
           </span>
         )}
         {otherActions.map((action, index) => (
@@ -558,11 +558,11 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
     : (routeHighlights.length > 0 ? routeHighlights.slice(0, 2) : comparableDecisions.slice(0, 2))
   const keyRouteDecisionMap = new Map(keyRouteDecisions.map(decision => [decision.sequence, decision]))
   const ordered = [...summary.players].sort((a, b) => a.rank - b.rank)
-  const transferSection = (title: string, transfers: typeof summary.instantTransfers) => (
+  const transferSection = (title: string, transfers: typeof summary.instantTransfers, emptyHint?: string) => (
     <section className="settlement-card">
       <h3>{title}</h3>
       {transfers.length === 0
-        ? <p className="muted">无计分流水</p>
+        ? <p className={emptyHint === undefined ? 'muted' : 'ready-note'}>{emptyHint ?? '无计分流水'}</p>
         : (
             <ol className="transfer-list">
               {transfers.map(event => (
@@ -617,7 +617,7 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
               {' '}
               分
             </strong>
-            <p>{player.hasWon ? `已胡 · ${player.winFan}番` : '未胡'}</p>
+            <p>{player.hasWon ? `已胡 · ${formatWinFanDetail({ baseFan: player.winBaseFan, fan: player.winFan, special: player.winSpecial })}` : '未胡'}</p>
           </article>
         ))}
       </section>
@@ -657,7 +657,7 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
       </section>
       <div className="settlement-flow">
         {transferSection('对局即时流水', summary.instantTransfers)}
-        {transferSection('终局结算', summary.finalTransfers)}
+        {transferSection('终局结算', summary.finalTransfers, summary.readyCheckNote || '本局终局无退税、无花猪赔付、无查叫赔付。')}
       </div>
       <section className="settlement-card ready-settlement">
         <h3>查叫关系</h3>

@@ -1,12 +1,18 @@
+import type { UserPerspective } from './xiaoshiDissent'
+
 // 破晓哥镜像导师 · 用户异议持久化单测
 // 不依赖 jsdom：用内存版 localStorage 模拟浏览器 window，保持 node 环境可跑。
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-
 import {
   addPerspective,
+  buildStageTalk,
+  computeMentorProgress,
   loadPerspectives,
+  loadSeenStage,
   makeMentorNote,
   makeMentorResponse,
+  markStageSeen,
+  MENTOR_LEVELS,
   setPerspectiveStatus,
   toUserAngles,
 } from './xiaoshiDissent'
@@ -125,5 +131,68 @@ describe('makeMentorResponse：导师也要有自己的不同意见', () => {
     expect(p.mentorLine).toContain('保留意见')
     expect(p.mentorBasis?.evidenceCount).toBeGreaterThan(0)
     expect(p.mentorNote).toContain('唱个反调')
+  })
+})
+
+describe('xiaoshiDissent：导师段位与阶段对谈', () => {
+  function fake(over: Partial<UserPerspective>): UserPerspective {
+    return {
+      id: `x_${Math.random().toString(36).slice(2, 8)}`,
+      ruleId: null,
+      theme: null,
+      text: '我的角度',
+      createdAt: 0,
+      status: 'open',
+      ...over,
+    }
+  }
+
+  it('分值口径：待消化 1 / 保留异议 2 / 已纳入 3，按门槛定段位', () => {
+    const list = [
+      fake({ status: 'open' }),
+      fake({ status: 'kept' }),
+      fake({ status: 'accepted' }),
+      fake({ status: 'accepted' }),
+    ]
+    const p = computeMentorProgress(list)
+    expect(p.score).toBe(1 + 2 + 3 + 3)
+    expect(p.level).toBe(2)
+    expect(MENTOR_LEVELS[p.level - 1].title).toBe(p.title)
+    expect(p.nextThreshold).toBe(MENTOR_LEVELS[p.level].threshold)
+    expect(p.accepted).toBe(2)
+    expect(p.kept).toBe(1)
+  })
+
+  it('空记录是 Lv1 初听牌路，对谈是邀请语气', () => {
+    const p = computeMentorProgress([])
+    expect(p.level).toBe(1)
+    expect(p.title).toBe('初听牌路')
+    expect(buildStageTalk(p)).toContain('别憋着')
+  })
+
+  it('立场统计与主题归集，寄语按主导立场变化', () => {
+    const list = [
+      fake({ stance: 'hold', theme: '防守与逃跑' }),
+      fake({ stance: 'hold', theme: '防守与逃跑' }),
+      fake({ stance: 'agree' }),
+    ]
+    const p = computeMentorProgress(list)
+    expect(p.stanceCounts).toEqual({ agree: 1, partial: 0, hold: 2 })
+    expect(p.topTheme).toBe('防守与逃跑')
+    const talk = buildStageTalk(p)
+    expect(talk).toContain('我保留 2')
+    expect(talk).toContain('防守与逃跑')
+    expect(talk).toContain('顶牛')
+  })
+
+  it('认同占主导时寄语换成"先自己下结论"', () => {
+    const list = [fake({ stance: 'agree' }), fake({ stance: 'agree' }), fake({ stance: 'partial' })]
+    expect(buildStageTalk(computeMentorProgress(list))).toContain('先自己下结论')
+  })
+
+  it('已读段位标记：默认 0，标记后可读回', () => {
+    expect(loadSeenStage()).toBe(0)
+    markStageSeen(3)
+    expect(loadSeenStage()).toBe(3)
   })
 })

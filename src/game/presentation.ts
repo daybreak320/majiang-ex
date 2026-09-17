@@ -1,13 +1,51 @@
 import type { ReviewReport } from '../review/types'
 import type { SpecialTrainingKind } from './core'
 import type { GameHistoryEntry, ReviewIssueSample } from './persistence'
-import type { GameCommand, GameEvent, GameState, MeldKind, PlayerId, ScoreReason, TileInstance } from './types'
+import type { GameCommand, GameEvent, GameState, MeldKind, PlayerId, ScoreReason, SpecialWinKind, TileInstance } from './types'
 import { REVIEW_ALGORITHM_VERSION } from '../review/analyzer'
 import { chooseAICommand, getAIReason } from './ai'
 import { createInitialGame } from './core'
+import { MILESTONE_1_RULES } from './rules'
 import { analyzeReadyHand, isFlowerPig } from './settlement'
 
 export const PLAYER_NAMES = ['你', '做大做强', '搞死搞残', '先跑为敬'] as const
+
+/** 特殊胡的加番名目（每种 +1 番） */
+export const SPECIAL_WIN_LABELS: Record<SpecialWinKind, string> = {
+  selfDraw: '自摸',
+  kongDraw: '杠上开花',
+  lastTileDraw: '海底捞月',
+  robKong: '抢杠胡',
+  lastTileDiscard: '海底炮',
+  kongDiscard: '杠上炮',
+}
+
+/** 接受引擎 WinInfo 或结算页投影（winBaseFan/winFan/winSpecial）两种形状 */
+type WinFanLike = { baseFan?: number | null, fan?: number | null, special?: SpecialWinKind[] } | null | undefined
+
+/** 番数短标注：用于牌桌玩家面板（如「3番 · 海底捞月 · 封顶」） */
+export function formatWinFanBadge(winInfo: WinFanLike): string {
+  const fan = winInfo?.fan
+  if (fan === null || fan === undefined)
+    return '0番'
+  const marks = (winInfo?.special ?? []).filter(kind => kind !== 'selfDraw').map(kind => SPECIAL_WIN_LABELS[kind])
+  const capNote = fan >= MILESTONE_1_RULES.fanCap ? ' · 封顶' : ''
+  return `${fan}番${marks.length > 0 ? ` · ${marks.join('/')}` : ''}${capNote}`
+}
+
+/** 番数出处明细：用于结算页（如「基础 2 + 海底捞月 1 = 3番 · 自摸」） */
+export function formatWinFanDetail(winInfo: WinFanLike): string {
+  const fan = winInfo?.fan
+  if (fan === null || fan === undefined)
+    return '未胡'
+  const special = winInfo?.special ?? []
+  const baseFan = winInfo?.baseFan ?? (fan - special.length)
+  const adds = special.filter(kind => kind !== 'selfDraw').map(kind => `${SPECIAL_WIN_LABELS[kind]} 1`)
+  const head = special.includes('selfDraw') ? '自摸' : '点炮胡'
+  const extra = adds.length > 0 ? ` + ${adds.join(' + ')}` : ''
+  const capNote = fan >= MILESTONE_1_RULES.fanCap ? `（${MILESTONE_1_RULES.fanCap} 番封顶）` : ''
+  return `基础 ${baseFan}${extra} = ${fan}番 · ${head}${capNote}`
+}
 
 export const AI_STYLE_LABELS = {
   aggressive: '进攻型 · 爱冲',
@@ -335,6 +373,10 @@ export interface PlayerSettlementSummary {
   hasWon: boolean
   winFan: number | null
   winKind: 'selfDraw' | 'discard' | 'robKong' | null
+  /** 基础番（不含海底/杠开等特殊加番），未胡为 null */
+  winBaseFan: number | null
+  /** 特殊加番名目（海底捞月/杠上开花/抢杠胡…），未胡为空 */
+  winSpecial: SpecialWinKind[]
   dealtIn: number
   kongCounts: Record<'mingGang' | 'buGang' | 'anGang', number>
   kongIncome: number
@@ -409,6 +451,8 @@ export function buildSettlementSummary(state: GameState): SettlementSummary {
         hasWon: player.hasWon,
         winFan: player.winInfo?.fan ?? null,
         winKind: player.winInfo?.kind ?? null,
+        winBaseFan: player.winInfo?.baseFan ?? null,
+        winSpecial: player.winInfo?.special ?? [],
         dealtIn: state.events.filter(event => event.type === 'player_won' && event.info.fromPlayer === player.id).length,
         kongCounts: {
           mingGang: player.melds.filter(meld => meld.kind === 'mingGang').length,

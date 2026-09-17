@@ -11,8 +11,12 @@ import { buildXiaoshiAdvice } from '../knowledge/xiaoshiAdvisor'
 import { XIAOSHI_CASES } from '../knowledge/xiaoshiCases'
 import {
   addPerspective,
+  buildStageTalk,
   CHANGE_EVENT,
+  computeMentorProgress,
   loadPerspectives,
+  loadSeenStage,
+  markStageSeen,
   setPerspectiveStatus,
   toUserAngles,
 } from '../knowledge/xiaoshiDissent'
@@ -37,8 +41,17 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
   const [composerFor, setComposerFor] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [generalDraft, setGeneralDraft] = useState('')
+  const [seenStage, setSeenStage] = useState(() => loadSeenStage())
 
   const angles = useMemo(() => toUserAngles(perspectives), [perspectives])
+  const progress = useMemo(() => computeMentorProgress(perspectives), [perspectives])
+  // 攒够分值晋升新段位 → 弹一次「阶段对谈」；看过就记下，不重复打扰
+  const stageUnlocked = progress.level > seenStage
+
+  function acknowledgeStage() {
+    markStageSeen(progress.level)
+    setSeenStage(progress.level)
+  }
   const advice = useMemo(() => buildXiaoshiAdvice(state, 0, { userAngles: angles }), [state, angles])
 
   // 其他入口（如教练卡内联异议）写入后同步重读，避免多面板状态不一致
@@ -80,6 +93,14 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
       <div className="xiaoshi-heading">
         <span className="eyebrow">理由解释</span>
         <h3>实战风格提示</h3>
+        <div className="mentor-rank">
+          <span className="mentor-rank-badge">{`Lv${progress.level} · ${progress.title}`}</span>
+          <small>
+            {progress.nextThreshold === null
+              ? '已到顶段 · 继续交锋只涨分不涨段'
+              : `段位分 ${progress.score}/${progress.nextThreshold} · 再攒 ${progress.nextThreshold - progress.score} 分晋升`}
+          </small>
+        </div>
         <p>
           {XIAOSHI_CASES.length}
           {' '}
@@ -100,6 +121,15 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
           )}
         </p>
       </div>
+
+      {stageUnlocked && (
+        <section className="mentor-stage-talk" aria-label="导师阶段对谈">
+          <span className="mentor-stage-eyebrow">进阶对谈 · 段位晋升</span>
+          <b>{`Lv${progress.level} ${progress.title}`}</b>
+          <p>{buildStageTalk(progress)}</p>
+          <button className="xiaoshi-send" onClick={acknowledgeStage}>记下了，继续</button>
+        </section>
+      )}
 
       {advice.length === 0
         ? (
