@@ -1789,6 +1789,128 @@ function matchDropDeadPair(ctx: RuleContext): RuleHit | null {
 }
 
 // ---------------------------------------------------------------------------
+// 执行器 R-KONG-FEED-RISK-v0：别把能喂对手「杠」的牌打出去（防杠上花）
+// ---------------------------------------------------------------------------
+
+/**
+ * 触发（出牌窗口）：手上有某张牌 T，打出会令某对手由「碰」升级成「明杠」
+ * （该对手已有 T 的碰副露，且明显在做牌：副露 ≥2 副），这张 T 就是「喂杠」牌——
+ * 对手杠后还有杠上花，一旦开花就是十分级的崩盘（见候选「二条点杠下家…杠开」）。
+ * 依据候选「杠」(36 视频)：杠上花之灾「没有办法，放平心态」，但能不喂就不喂。
+ * 动作：列出喂杠张，提示优先打更安全的牌；若无安全替代可酌情，但别主动送杠。
+ * 边界：对手副露 <2 副（未明显做大）时杠上花威胁小，不触发；自己已听牌且 T 为叫口关键张则另论。
+ */
+function matchKongFeedRisk(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  if (state.phase === 'dingque')
+    return null
+  const me = state.players[self]
+  const feeders: { tile: TileInstance, seat: SeatLabel }[] = []
+  for (const t of me.hand) {
+    for (const p of state.players) {
+      if (p.id === self || p.hasWon)
+        continue
+      const peng = p.melds.find(m => m.kind === 'peng' && m.tiles[0]?.type === t.type && m.tiles[0]?.value === t.value)
+      if (peng !== undefined && p.melds.length >= 2) {
+        feeders.push({ tile: t, seat: seatLabelOf(self, p.id) })
+        break
+      }
+    }
+  }
+  if (feeders.length === 0)
+    return null
+  const labels = feeders.map(f => tileLabel(f.tile))
+  return {
+    windowKind: 'discard',
+    headline: `手里有 ${labels.length} 张「喂杠」牌，先别送出去`,
+    advice: `你手上的 ${labels.join('、')} 一旦打出，会让对手由「碰」升级成「明杠」——`
+      + `对方已有至少 2 副副露在做牌，杠后还有杠上花，开花就是十分级的崩盘。`
+      + `能打别的牌就先打别的；实在没安全张可打再酌情，但别主动把杠喂出去。`,
+    evidence: [
+      `喂杠张：${labels.join('、')}`,
+      `对应对手副露 ≥2 副（在做牌）`,
+    ],
+    mainSuit: feeders[0]?.tile.type ?? null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-DINGQUE-EARLY-DROP-v0：自己的缺章牌早打掉，先下叫选择才多
+// ---------------------------------------------------------------------------
+
+/**
+ * 触发（出牌窗口）：定缺已结束、自己尚未听牌、手上还攒着 ≥2 张「缺章」牌。
+ * 缺章牌对你永远是无用张（不可能进你的叫），捏着只会拖慢下叫、丢掉先手。
+ * 依据候选「缺张」(21 视频)：「先打缺的人有着先下叫和更多选择的机会」。
+ * 动作：优先把缺章牌打出去清口，早清完早听牌；别拿缺章牌去凑搭子。
+ * 边界：已听牌时（再打缺章会拆叫）不触发；手上仅 1 张缺章属正常范围不催促。
+ */
+function matchDingqueEarlyDrop(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  if (me.dingque === null || state.phase === 'dingque')
+    return null
+  if (waitPlans(me, ctx.visible).length > 0)
+    return null
+  const dq = me.dingque
+  const held = me.hand.filter(t => t.type === dq)
+  if (held.length < 2)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `手上还有 ${held.length} 张缺章（${dq}），先打掉清口`,
+    advice: `你缺的是${dq}，这些${dq}对你永远是无用张，不可能进叫。捏着只拖慢下叫、丢掉先手——`
+      + `先打掉它们把口子清干净，早下叫选择才多。别拿缺章牌去硬凑搭子。`,
+    evidence: [
+      `缺章门：${dq}`,
+      `手上缺章牌：${held.map(tileLabel).join('、')}（${held.length} 张）`,
+      `当前未听牌`,
+    ],
+    mainSuit: dq,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 执行器 R-XIAJIAO-QUALITY-v0：下叫质量优先于「有叫没叫」
+// ---------------------------------------------------------------------------
+
+const XIAJIAO_POOR_LIVE = 1
+const XIAJIAO_SAFE_WALL = 20
+
+/**
+ * 触发（出牌窗口·中前期）：你现在能听牌，但最好的听牌方案是「单调/窄叫」（活张 ≤1 张，
+ * 即靠一张极难摸到的牌胡），且牌墙还长（中前期、无紧迫满牌威胁）。
+ * 依据候选「下叫」(23 视频)：「叫口的质量肯定比掉三掉四条质量高得多」——
+ * 这时候不急着把自己按进一个死叫，留一手再摸一张，往往能换成多面/宽叫。
+ * 动作：暂不急着下这个死叫，保留能改成多面叫的牌，再摸一张看能否升级叫口。
+ * 边界：尾盘（牌墙将尽）或对手满牌威胁成型时，任何叫都比死等强→不触发（先求听）；
+ *       若已有 ≥2 条活张差的听牌方案可选，由 R-MAX-LIVE-WAIT-v0 接管，本条被抑制。
+ */
+function matchXiajiaoQuality(ctx: RuleContext): RuleHit | null {
+  const { state, self } = ctx
+  const me = state.players[self]
+  if (me.dingque === null || state.phase === 'dingque')
+    return null
+  const best = waitPlans(me, ctx.visible)[0]
+  if (best === undefined || best.live > XIAJIAO_POOR_LIVE)
+    return null
+  if (state.wall.length <= XIAJIAO_SAFE_WALL)
+    return null
+  return {
+    windowKind: 'discard',
+    headline: `眼前的叫是死叫（活 ${best.live} 张），中前期先别急着下`,
+    advice: `你这手如果现在下叫，叫口只有 ${best.live} 张活牌（${best.waits.map(w => w.label).join('/')}），`
+      + `属于「有叫没叫」的死叫。牌墙还长、又没满牌紧迫威胁，别急着把自己按进这个死叫——`
+      + `留着手里能改多面叫的牌，再摸一张往往能换成宽叫，质量天差地别。`,
+    evidence: [
+      `当前最佳叫口：${best.waits.map(w => w.label).join('/')}（活 ${best.live} 张）`,
+      `牌墙剩 ${state.wall.length} 张（中前期）`,
+    ],
+    mainSuit: (best.waits[0]?.label.slice(-1) as TileType) ?? null,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 规则执行器注册表（新归纳规则需「可判定化」后在此登记，宁缺毋滥）
 // ---------------------------------------------------------------------------
 
@@ -1832,6 +1954,10 @@ const RULE_EXECUTORS: ReadonlyArray<{ ruleId: string, run: RuleExecutor }> = [
   { ruleId: 'R-EXPECT-MINDSET-v0', run: matchExpectMindset },
   { ruleId: 'R-NO-ZHANG-PLAN-v0', run: matchNoZhangPlan },
   { ruleId: 'R-DROP-DEAD-PAIR-v0', run: matchDropDeadPair },
+  // 第三批改判定化：杠/缺张/下叫（来自候选库高频决策对象，已跨期复现）
+  { ruleId: 'R-KONG-FEED-RISK-v0', run: matchKongFeedRisk },
+  { ruleId: 'R-DINGQUE-EARLY-DROP-v0', run: matchDingqueEarlyDrop },
+  { ruleId: 'R-XIAJIAO-QUALITY-v0', run: matchXiajiaoQuality },
 ]
 
 /**

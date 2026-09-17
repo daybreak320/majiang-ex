@@ -1,15 +1,16 @@
+import type { GameState, PlayerId, TileInstance } from '../game/types'
+import type { TileType } from '../types'
 // 破晓哥镜像导师 · 规则判定通道单测
 import { describe, expect, it } from 'vitest'
-import type { TileType } from '../types'
-import type { GameState, PlayerId, TileInstance } from '../game/types'
-import { createInitialGame, createTileSet } from '../game/core'
 import { chooseAICommand } from '../game/ai'
+import { createInitialGame, createTileSet } from '../game/core'
 import { executeCommand } from '../game/engine'
 import {
   buildXiaoshiAdvice,
   DROP_CALL_MAX_LIVE_WAITS,
   makeQuoteBridge,
-  MAX_DECISION_ADVICE, MAX_OBSERVE_ADVICE,
+  MAX_DECISION_ADVICE,
+  MAX_OBSERVE_ADVICE,
   relativeDistance,
   seatLabelOf,
 } from './xiaoshiAdvisor'
@@ -100,7 +101,7 @@ describe('R-RIVER-INFER-v0：对手弃 7 与 9 反推高张', () => {
   it('无人同门弃 7+9 → 不触发（保持安静）', () => {
     const { state, pool } = emptyGame(803)
     state.players[1].discards = take(pool, '7筒 8筒 9万') // 有 7 无 9（不同门）
-    state.players[2].discards = take(pool, '9筒 6筒')      // 有 9 无 7
+    state.players[2].discards = take(pool, '9筒 6筒') // 有 9 无 7
     const advice = buildXiaoshiAdvice(state, 0)
     expect(advice.find(item => item.ruleId === 'R-RIVER-INFER-v0')).toBeUndefined()
   })
@@ -514,9 +515,16 @@ describe('R-THREAT-ESCAPE-v0：识别大牌威胁 → 点炮就走', () => {
     state.players[0].hand = take(pool, '1万 2万 3万 9条 9条 1筒 2筒 3筒 5筒 6筒 7筒 1条 2条')
     state.players[0].dingque = '条'
     state.responseWindow = {
-      kind: 'discard', sourcePlayer: 1, tile, eligiblePlayers: [0],
-      choices: { 0: { type: 'hu', value: 2 } }, resumePlayer: 1, pendingMeldIndex: null,
-      sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+      kind: 'discard',
+      sourcePlayer: 1,
+      tile,
+      eligiblePlayers: [0],
+      choices: { 0: { type: 'hu', value: 2 } },
+      resumePlayer: 1,
+      pendingMeldIndex: null,
+      sourceEventSequence: 1,
+      isLastTile: false,
+      isKongDiscard: false,
     }
     const advice = allAdvice(state)
     const hit = advice.find(a => a.ruleId === 'R-THREAT-ESCAPE-v0')
@@ -540,9 +548,16 @@ describe('R-CHECK-DINGQUE-BEFORE-PONG-v0：早期碰牌前先看缺章', () => {
     const tile = take(pool, '9筒')[0]!
     state.players[1].discards = take(pool, '1条 2条')
     state.responseWindow = {
-      kind: 'discard', sourcePlayer: 1, tile, eligiblePlayers: [0],
-      choices: { 0: { type: 'peng' } }, resumePlayer: 1, pendingMeldIndex: null,
-      sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+      kind: 'discard',
+      sourcePlayer: 1,
+      tile,
+      eligiblePlayers: [0],
+      choices: { 0: { type: 'peng' } },
+      resumePlayer: 1,
+      pendingMeldIndex: null,
+      sourceEventSequence: 1,
+      isLastTile: false,
+      isKongDiscard: false,
     }
     const hit = allAdvice(state).find(a => a.ruleId === 'R-CHECK-DINGQUE-BEFORE-PONG-v0')
     expect(hit).toBeDefined()
@@ -598,6 +613,103 @@ describe('R-DROP-DEAD-PAIR-v0：死对先打别舍不得', () => {
     const hit = allAdvice(state).find(a => a.ruleId === 'R-DROP-DEAD-PAIR-v0')
     expect(hit).toBeDefined()
     expect(hit!.headline).toContain('9条')
+  })
+})
+
+describe('R-KONG-FEED-RISK-v0：别把能喂对手「杠」的牌打出去', () => {
+  it('手里有对手已碰且对方副露≥2副的牌 → 命中「喂杠」提醒', () => {
+    const { state, pool } = emptyGame(1201)
+    // 下家（player[1]）已碰出 4万、8万两副 → 明显在做牌
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '4万 4万 4万'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '8万 8万 8万'), fromPlayer: 3 },
+    ]
+    // 自己手上捏着一张 4万（喂杠张），不含 8万以隔离成单张喂杠
+    state.players[0].hand = take(pool, '1万 4万 2万 3万 5万 6万 7万 9万 1条 2条 3条 4条 9条')
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-KONG-FEED-RISK-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('喂杠')
+    expect(hit!.evidence.join(' ')).toContain('4万')
+  })
+
+  it('对手副露不足两副 → 静默（杠上花威胁小）', () => {
+    const { state, pool } = emptyGame(1202)
+    state.players[1].melds = [{ kind: 'peng', tiles: take(pool, '4万 4万 4万'), fromPlayer: 2 }]
+    state.players[0].hand = take(pool, '4万 1万 2万 3万 5万 6万 7万 9万 1条 2条 3条 4条 9条')
+    expect(allAdvice(state).some(a => a.ruleId === 'R-KONG-FEED-RISK-v0')).toBe(false)
+  })
+
+  it('定缺阶段 → 静默', () => {
+    const { state, pool } = emptyGame(1203)
+    state.phase = 'dingque'
+    state.players[1].melds = [
+      { kind: 'peng', tiles: take(pool, '4万 4万 4万'), fromPlayer: 2 },
+      { kind: 'peng', tiles: take(pool, '8万 8万 8万'), fromPlayer: 3 },
+    ]
+    state.players[0].hand = take(pool, '4万 1万 2万 3万 5万 6万 7万 9万 1条 2条 3条 4条 9条')
+    expect(allAdvice(state).some(a => a.ruleId === 'R-KONG-FEED-RISK-v0')).toBe(false)
+  })
+})
+
+describe('R-DINGQUE-EARLY-DROP-v0：缺章牌早打掉', () => {
+  it('已定缺、未听牌、手里≥2张缺章 → 命中清口提醒', () => {
+    const { state, pool } = emptyGame(1211)
+    state.players[0].dingque = '筒'
+    // 13 张全孤立（无对、无搭），确保未听牌；含 1筒、5筒 两张缺章
+    state.players[0].hand = take(pool, '1筒 5筒 1万 3万 5万 7万 9万 2条 4条 6条 8条 9条 2万')
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-DINGQUE-EARLY-DROP-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('缺章')
+    expect(hit!.evidence.join(' ')).toContain('筒')
+  })
+
+  it('已经听牌（再打缺章会拆叫）→ 静默', () => {
+    const { state, pool } = emptyGame(1212)
+    state.players[0].dingque = '条'
+    // 四副顺子 + 单 5万（单调 5万听牌），无缺章在手的干扰
+    state.players[0].hand = take(pool, '1筒 2筒 3筒 4筒 5筒 6筒 7筒 8筒 9筒 1万 2万 3万 5万')
+    expect(allAdvice(state).some(a => a.ruleId === 'R-DINGQUE-EARLY-DROP-v0')).toBe(false)
+  })
+
+  it('手里只有 1 张缺章（正常不催促）→ 静默', () => {
+    const { state, pool } = emptyGame(1213)
+    state.players[0].dingque = '筒'
+    state.players[0].hand = take(pool, '1筒 1万 3万 5万 7万 9万 2条 4条 6条 8条 9条 2万 4万')
+    expect(allAdvice(state).some(a => a.ruleId === 'R-DINGQUE-EARLY-DROP-v0')).toBe(false)
+  })
+})
+
+describe('R-XIAJIAO-QUALITY-v0：下叫质量优先于「有叫没叫」', () => {
+  it('中前期能听但最佳叫是死叫（活张≤1）→ 命中死叫提醒', () => {
+    const { state, pool } = emptyGame(1221)
+    state.players[0].dingque = '条'
+    // 四副顺子 + 单 5万（单调 5万），且 5万 三张已现 → 活张仅 1
+    state.players[0].hand = take(pool, '1筒 2筒 3筒 4筒 5筒 6筒 7筒 8筒 9筒 1万 2万 3万 5万')
+    const gone = take(pool, '5万 5万 5万')
+    state.players[2].discards = [gone[0]!]
+    state.players[3].discards = [gone[1]!, gone[2]!]
+    const hit = allAdvice(state).find(a => a.ruleId === 'R-XIAJIAO-QUALITY-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.headline).toContain('死叫')
+  })
+
+  it('能听且叫口宽（活张多）→ 不催促死叫', () => {
+    const { state, pool } = emptyGame(1222)
+    state.players[0].dingque = '条'
+    state.players[0].hand = take(pool, '1筒 2筒 3筒 4筒 5筒 6筒 7筒 8筒 9筒 1万 2万 3万 5万')
+    // 5万 一张都没现 → 活张 4，宽叫不提醒
+    expect(allAdvice(state).some(a => a.ruleId === 'R-XIAJIAO-QUALITY-v0')).toBe(false)
+  })
+
+  it('尾盘（牌墙将尽）→ 任何叫都比死等强，静默', () => {
+    const { state, pool } = emptyGame(1223)
+    state.players[0].dingque = '条'
+    state.players[0].hand = take(pool, '1筒 2筒 3筒 4筒 5筒 6筒 7筒 8筒 9筒 1万 2万 3万 5万')
+    const gone = take(pool, '5万 5万 5万')
+    state.players[2].discards = [gone[0]!]
+    state.players[3].discards = [gone[1]!, gone[2]!]
+    state.wall = pool.slice(0, 10) // 牌墙剩 10 张（尾盘）
+    expect(allAdvice(state).some(a => a.ruleId === 'R-XIAJIAO-QUALITY-v0')).toBe(false)
   })
 })
 
