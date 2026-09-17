@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { advanceAIOnce } from '../game/ai'
 import { buildCandidateLesson, buildDiscardAssistant, buildHuLesson, buildImmediateDiscardFeedback, buildPengLesson } from '../game/assistant'
 import { createInitialGame, createSpecialTrainingGame, getSpecialTrainingScenarioCount, getWideBedScenario, getWideTenpaiScenario, recommendDingque, SPECIAL_TRAINING_META } from '../game/core'
-import { executeCommand, getDingqueBlockedActions, getLegalActions, getTimeoutCommand } from '../game/engine'
+import { executeCommand, getDingqueBlockedActions, getLegalActions, getTimeoutCommand, hasUnclearedDingque } from '../game/engine'
 import { emptyTenpaiMemory, hasAnyTingPlayer, trackStateInto } from '../game/guessWin'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
 import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, FINAL_STATE_LABELS, formatAIBehaviorTag, formatGameEvent, formatWinFanBadge, formatWinFanDetail, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
@@ -157,9 +157,8 @@ function ImmediateTenpaiHint({ candidate }: { candidate: DiscardCandidateAnalysi
 
 function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, blockedActions, legal, submit }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], blockedActions: Extract<LegalAction, { type: 'peng' | 'gang' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
   const player = state.players[0]
-  // 定缺未清（手里还留有缺门牌）= 不能碰/明杠（引擎规则）。
-  // 之前 UI 只给对手标了已清/未清，自己反而没标 → 出现"为什么碰不了"的困惑，这里补齐。
-  const dingqueUncleared = player.dingque !== null && player.hand.some(tile => tile.type === player.dingque)
+  // 定缺是否打完（手里还留着缺门牌）——只作状态展示；鸣牌限制只看"这张牌是不是缺门"。
+  const dingqueUncleared = hasUnclearedDingque(player)
   const analysis = useMemo(() => buildDiscardAssistant(state), [state])
   const selectedTile = player.hand.find(tile => tile.id === selectedTileId)
   const selectedCandidate = selectedTile === undefined || !discardIds.has(selectedTile.id)
@@ -219,11 +218,10 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
               ? '请选择动作'
               : '等待 AI 行动…'}
         </div>
-        {dingqueUncleared && (
-          <span className="dingque-lock-hint" title={`定缺是一条义务：必须先把「${player.dingque}」打出去才算履行完。履行完之前不能用别人的牌鸣牌（碰 / 明杠）——否则等于义务没做完先享受权利，清缺也会被一拖再拖。暗杠是自己手里凑的、不需要别人配合，所以不受这条限制。打完「${player.dingque}」后按钮自动解锁。`}>
-            定缺未清 · 打完
+        {blockedActions.length > 0 && (
+          <span className="dingque-lock-hint" title={`定缺的「${player.dingque}」是你要放弃的一门：它只能被打出去，不能被碰/杠（留下做刻子等于定缺白定）。除了这一门，其他任何牌都不受限制，随时可碰可杠。`}>
             {player.dingque}
-            才有碰/明杠资格（暗杠不受限；被挡的动作已标出）
+            是缺门 · 缺门的牌不能碰/杠（其他门不受限）
           </span>
         )}
         {otherActions.map((action, index) => (
@@ -241,11 +239,11 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
             className="secondary-action blocked-action"
             key={`blocked-${action.type}-${'kind' in action ? action.kind : ''}-${'tileId' in action ? action.tileId : index}`}
             disabled
-            title={`${actionLabel(action, state)}被定缺规则挡下：先把缺门「${player.dingque}」打完，才有碰/杠资格`}
+            title={`这张是缺门「${player.dingque}」：定缺的牌只能打出去，不能碰/杠`}
           >
             {actionLabel(action, state)}
             {' '}
-            · 定缺未清
+            · 缺门牌不能鸣
           </button>
         ))}
         <button className="primary-action" disabled={selectedAction === undefined} onClick={() => selectedAction && submit(selectedAction)}>

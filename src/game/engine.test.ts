@@ -133,10 +133,10 @@ describe('弃牌响应与摸牌', () => {
     expect(entityIds(state)).toHaveLength(108)
   })
 
-  it('定缺未清时只允许过，不允许碰或明杠', () => {
-    const state = fixture(['5万', '55万 1条', '1万', '2万'])
-    state.players[1].dingque = '条'
-    const discarded = state.players[0].hand[0]
+  it('缺门没清也能碰非缺门牌（鸣牌限制只看牌门）', () => {
+    const state = fixture(['5万', '555万 1条', '1万', '2万'])
+    state.players[1].dingque = '条' // 手里还有 1条 → 未清
+    const discarded = state.players[0].hand[0] // 5万，非缺门
     state.phase = 'responding'
     state.responseWindow = {
       kind: 'discard',
@@ -151,14 +151,17 @@ describe('弃牌响应与摸牌', () => {
       isKongDiscard: false,
     }
 
-    expect(getLegalActions(state, 1)).toEqual([{ type: 'pass' }])
-    expect(executeCommand(state, { type: 'peng', playerId: 1, tileId: discarded.id })).toMatchObject({ ok: false, error: '非法动作' })
+    const actions = getLegalActions(state, 1)
+    expect(actions).toContainEqual({ type: 'peng', tileId: discarded.id })
+    expect(actions).toContainEqual({ type: 'gang', tileId: discarded.id, kind: 'mingGang' })
+    expect(getDingqueBlockedActions(state, 1)).toEqual([])
+    expect(executeCommand(state, { type: 'peng', playerId: 1, tileId: discarded.id }).ok).toBe(true)
   })
 
-  it('被定缺挡下的碰/明杠能被 UI 单独识别出来（按钮看得见、点不了）', () => {
-    const state = fixture(['5万', '555万 1条', '1万', '2万'])
+  it('缺门那一门永远不能碰/杠，且能被单独识别出来', () => {
+    const state = fixture(['1条', '111条 5万', '1万', '2万'])
     state.players[1].dingque = '条'
-    const discarded = state.players[0].hand[0]
+    const discarded = state.players[0].hand[0] // 1条，正是缺门
     state.phase = 'responding'
     state.responseWindow = {
       kind: 'discard',
@@ -173,17 +176,13 @@ describe('弃牌响应与摸牌', () => {
       isKongDiscard: false,
     }
 
-    // 规则照旧：法律动作里只有"过"
-    expect(getLegalActions(state, 1)).toEqual([{ type: 'pass' }])
-    // 但被挡的碰/明杠要能被识别，前端据此渲染禁用按钮
+    expect(getLegalActions(state, 1).some(action => action.type === 'peng' || action.type === 'gang')).toBe(false)
+    // 被挡的动作照旧能被 UI 识别，用于渲染"看得见、点不了"的按钮
     expect(getDingqueBlockedActions(state, 1)).toEqual([
       { type: 'peng', tileId: discarded.id },
       { type: 'gang', tileId: discarded.id, kind: 'mingGang' },
     ])
-
-    // 缺门清完之后（手里无条）不再挡
-    state.players[1].dingque = '筒'
-    expect(getDingqueBlockedActions(state, 1)).toEqual([])
+    expect(executeCommand(state, { type: 'peng', playerId: 1, tileId: discarded.id })).toMatchObject({ ok: false, error: '非法动作' })
   })
 
   it('明杠由点杠者支付2分并补摸', () => {

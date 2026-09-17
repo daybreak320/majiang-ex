@@ -159,7 +159,8 @@ function responseHuOption(state: GameState, playerId: PlayerId, window: Response
   return { score, special }
 }
 
-function hasUnclearedDingque(player: PlayerState): boolean {
+/** 定缺是否还没打完（手里还留着缺门牌）。供 UI 展示「已清/未清」与花猪口径复用。 */
+export function hasUnclearedDingque(player: PlayerState): boolean {
   return player.dingque !== null && player.hand.some(tile => tile.type === player.dingque)
 }
 
@@ -207,8 +208,10 @@ function responseActions(state: GameState, playerId: PlayerId): LegalAction[] {
   const hu = responseHuOption(state, playerId, window)
   if (hu !== null)
     actions.unshift({ type: 'hu', tileId: window.tile.id, value: hu.score.points })
-  // 四川麻将定缺未清之前必须先打缺，不能碰、明杠任何牌。
-  if (window.kind === 'discard' && !hasUnclearedDingque(player)) {
+  // 鸣牌限制只认「牌是不是缺门」这一条：
+  // 定缺那一门的牌永远不能碰/杠（留着做刻子等于定缺白定）；
+  // 非缺门牌不受定缺影响，任何时候都能碰/明杠。
+  if (window.kind === 'discard' && window.tile.type !== player.dingque) {
     if (matching.length >= 2)
       actions.push({ type: 'peng', tileId: window.tile.id })
     if (matching.length >= 3)
@@ -218,7 +221,7 @@ function responseActions(state: GameState, playerId: PlayerId): LegalAction[] {
 }
 
 /**
- * 缺门未清时被规则挡下的碰/明杠。
+ * 因为「这张牌属于缺门」而被规则挡下的碰/明杠。
  *  UI 用它渲染"看得见但点不了"的按钮——比直接让按钮消失更好，
  *  否则玩家会以为"根本没这张牌可碰"，摸不清是牌不对还是规则挡了。
  */
@@ -229,7 +232,7 @@ export function getDingqueBlockedActions(state: GameState, playerId: PlayerId): 
   if (!window.eligiblePlayers.includes(playerId) || window.choices[playerId] !== undefined)
     return []
   const player = state.players[playerId]
-  if (!hasUnclearedDingque(player))
+  if (player.dingque === null || window.tile.type !== player.dingque)
     return []
   const matching = player.hand.filter(tile => sameTile(tile, window.tile))
   const blocked: Extract<LegalAction, { type: 'peng' | 'gang' }>[] = []
