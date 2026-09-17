@@ -1,6 +1,6 @@
 import type { GameState } from '../game/types'
 import type { PerspectiveStatus, UserPerspective } from '../knowledge/xiaoshiDissent'
-import type { DecisionTheme } from '../knowledge/xiaoshiTypes'
+import type { DecisionTheme, MentorStance } from '../knowledge/xiaoshiTypes'
 // 理由解释面板（UI 层）
 // 与出牌建议并列展示：主线教练给主决策，这里只补经验规则、依据与边界——
 // 命中规则时输出一句话观点 + 理由原话 + 边界条件 + 可核验证据；未命中则保持安静。
@@ -29,6 +29,13 @@ const STATUS_LABEL: Record<PerspectiveStatus, string> = {
   open: '待消化',
   accepted: '已纳入',
   kept: '保留异议',
+}
+
+/** 导师立场标签——导师也要有自己的不同意见，不当应声虫 */
+const STANCE_LABEL: Record<MentorStance, string> = {
+  agree: '导师认同',
+  partial: '导师分情况',
+  hold: '导师有不同意见',
 }
 
 export function XiaoshiMentorPanel({ state }: { state: GameState }) {
@@ -115,7 +122,13 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
                         <span className="xiaoshi-angles-label">你的思考角度</span>
                         <ul>
                           {item.userAngles.map(a => (
-                            <li key={a.id}>{a.text}</li>
+                            <li key={a.id}>
+                              <span className="xiaoshi-angle-text">{a.text}</span>
+                              <span className={`xiaoshi-stance stance-${a.stance ?? 'partial'}`}>
+                                {STANCE_LABEL[a.stance ?? 'partial']}
+                                {a.mentorLine ? `：${a.mentorLine}` : ''}
+                              </span>
+                            </li>
                           ))}
                         </ul>
                       </div>
@@ -200,11 +213,24 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
                     <div className="discuss-meta">
                       <span className="discuss-scope">{p.ruleId ? p.ruleId : p.theme ? p.theme : '通用'}</span>
                       <span className={`discuss-status status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                      <span className={`xiaoshi-stance stance-${p.stance ?? 'partial'}`}>
+                        {STANCE_LABEL[p.stance ?? 'partial']}
+                      </span>
                     </div>
                     {p.mentorNote && (
                       <p className="discuss-mentor">
                         导师：
                         {p.mentorNote}
+                      </p>
+                    )}
+                    {p.mentorBasis && (
+                      <p className="discuss-basis">
+                        {[
+                          p.mentorBasis.ruleName ? `依据：${p.mentorBasis.ruleName}` : '',
+                          p.mentorBasis.confidence === undefined ? '' : `置信度 ${(p.mentorBasis.confidence * 100).toFixed(0)}%`,
+                          p.mentorBasis.evidenceCount === undefined ? '' : `${p.mentorBasis.evidenceCount} 个实例`,
+                          p.mentorBasis.boundary ? `边界：${p.mentorBasis.boundary}` : '',
+                        ].filter(Boolean).join(' · ')}
                       </p>
                     )}
                     <div className="discuss-actions">

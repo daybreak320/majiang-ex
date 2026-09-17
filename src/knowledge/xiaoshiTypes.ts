@@ -111,6 +111,14 @@ export function isTileLabel(value: string): value is TileLabel {
  * 作为「思考角度」注入到同类局面的导师建议中：按 ruleId 精确匹配，
  * 或 ruleId 为 null 时按 theme 匹配。纯数据、无 UI/存储依赖。
  */
+/**
+ * 导师对用户异议的立场——导师不是应声虫，得有自己的判断。
+ * - agree：导师认输，采纳用户角度
+ * - partial：分情况，落在规则边界外才成立
+ * - hold：导师保留自己的判断（明确提出不同意见）
+ */
+export type MentorStance = 'agree' | 'partial' | 'hold'
+
 export interface UserAngle {
   id: string
   /** 关联规则 id；为 null 表示通用角度（按主题匹配） */
@@ -119,4 +127,8 @@ export interface UserAngle {
   theme: DecisionTheme | null
   /** 用户观点原文 */
   text: string
+  /** 导师对该角度的立场；缺省按 partial 处理 */
+  stance?: MentorStance
+  /** 导师立场的一句话（含依据摘要，用于建议卡内联展示） */
+  mentorLine?: string
 }
