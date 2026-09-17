@@ -11,7 +11,7 @@ import { createInitialGame, createSpecialTrainingGame, getSpecialTrainingScenari
 import { executeCommand, getLegalActions, getTimeoutCommand } from '../game/engine'
 import { emptyTenpaiMemory, hasAnyTingPlayer, trackStateInto } from '../game/guessWin'
 import { clearUnfinishedGame, loadGameHistory, recordFinishedGame, saveUnfinishedGame } from '../game/persistence'
-import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, formatAIBehaviorTag, formatGameEvent, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
+import { buildEventTimeline, buildGameReview, buildHistoryInsight, buildSettlementSummary, buildSpecialTrainingReview, buildTableMood, buildTheoryHistoryEntry, FINAL_STATE_LABELS, formatAIBehaviorTag, formatGameEvent, MELD_LABELS, PLAYER_NAMES, recommendTraining, SCORE_REASON_LABELS } from '../game/presentation'
 import { buildStrategicReminder, detectOpponentThreats, inferEndgameDefense } from '../game/strategy'
 import { getAIThinkingProfile, getTurnTimerDuration, shouldAdvanceAI } from '../game/ui'
 import { goldenLineLabel } from '../knowledge/mahjongTheory'
@@ -661,8 +661,20 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
       </div>
       <section className="settlement-card ready-settlement">
         <h3>查叫关系</h3>
+        <div className="ready-status-row">
+          {summary.players.map(player => (
+            <span key={player.playerId} className={`ready-status ready-status-${player.finalState}`}>
+              <b>{PLAYER_NAMES[player.playerId]}</b>
+              <small>
+                {player.finalState === 'ready' && player.readyWaits.length > 0
+                  ? `听 ${player.readyWaits.join('/')}`
+                  : FINAL_STATE_LABELS[player.finalState]}
+              </small>
+            </span>
+          ))}
+        </div>
         {summary.readyTransfers.length === 0
-          ? <p className="muted">本局无查叫赔付</p>
+          ? <p className="ready-note">{summary.readyCheckNote || '本局无查叫赔付。'}</p>
           : (
               <div className="ready-relations">
                 {summary.readyTransfers.map(event => (

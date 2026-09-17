@@ -1,4 +1,4 @@
-import type { GameEvent } from './types'
+import type { GameEvent, TileInstance } from './types'
 import { describe, expect, it } from 'vitest'
 import { buildReport } from '../review/analyzer'
 import { createInitialGame, recommendDingque } from './core'
@@ -122,8 +122,17 @@ describe('结算页投影', () => {
 
   it('按近局反复问题推荐对应专项，而不是随机跳题', () => {
     const base = {
-      finishedAt: Date.now(), seed: 21, endReason: '牌墙已摸完', score: 0, rank: 2, hasWon: false, winFan: null,
-      dealtIn: 0, decisionsExcellent: 0, decisionsReasonable: 2, decisionsImprovable: 1,
+      finishedAt: Date.now(),
+      seed: 21,
+      endReason: '牌墙已摸完',
+      score: 0,
+      rank: 2,
+      hasWon: false,
+      winFan: null,
+      dealtIn: 0,
+      decisionsExcellent: 0,
+      decisionsReasonable: 2,
+      decisionsImprovable: 1,
     }
     expect(recommendTraining([{ ...base, issues: [{ kind: 'attackDefense', title: '尾盘危险', actual: '打3万', recommended: '打1万', reason: '风险高' }] }])?.kind).toBe('defense-big-hands')
     expect(recommendTraining([{ ...base, issues: [{ kind: 'strongCombo', title: '拆搭子', actual: '打2条', recommended: '打9万', reason: '拆强组合' }] }])?.kind).toBe('attack-qingyise')
@@ -140,5 +149,102 @@ describe('结算页投影', () => {
     expect(entry.decisionsExcellent).toBe(0)
     expect(entry.decisionsReasonable).toBe(0)
     expect(entry.decisionsImprovable).toBe(0)
+  })
+})
+
+describe('结算页 · 查叫解释', () => {
+  function tile(type: TileInstance['type'], value: number, id: string): TileInstance {
+    return { id, type, value }
+  }
+
+  function finishedState(seed: number) {
+    const state = createInitialGame(seed)
+    state.phase = 'finished'
+    state.endReason = 'wall_empty'
+    state.events = []
+    return state
+  }
+
+  it('未胡几家全是花猪时说明不产生查叫的原因', () => {
+    const state = finishedState(5)
+    state.players.forEach((player, index) => {
+      player.dingque = '万'
+      player.hand = [tile('万', 1, `pig-${index}`), ...player.hand.slice(0, 12)]
+    })
+
+    const summary = buildSettlementSummary(state)
+    expect(summary.readyTransfers).toEqual([])
+    expect(summary.players.map(player => player.finalState)).toEqual(['flowerPig', 'flowerPig', 'flowerPig', 'flowerPig'])
+    expect(summary.readyCheckNote).toContain('花猪')
+  })
+
+  it('未胡几家都没下叫时明确说明没有叫口可收赔', () => {
+    const scattered: [TileInstance['type'], number][] = [
+      ['条', 1],
+      ['条', 2],
+      ['条', 4],
+      ['条', 5],
+      ['条', 7],
+      ['条', 8],
+      ['筒', 1],
+      ['筒', 2],
+      ['筒', 4],
+      ['筒', 5],
+      ['筒', 7],
+      ['筒', 8],
+      ['条', 9],
+    ]
+    const state = finishedState(7)
+    state.players.forEach((player, index) => {
+      player.dingque = '万'
+      player.hand = scattered.map(([type, value], order) => tile(type, value, `scatter-${index}-${order}`))
+    })
+
+    const summary = buildSettlementSummary(state)
+    expect(summary.players.every(player => player.finalState === 'notReady')).toBe(true)
+    expect(summary.readyTransfers).toEqual([])
+    expect(summary.readyCheckNote).toContain('都没下叫')
+  })
+
+  it('只有花猪未听时提示花猪走花猪赔付、不再另算查叫', () => {
+    const state = finishedState(6)
+    state.players.forEach((player, index) => {
+      player.dingque = '万'
+      if (index === 1)
+        return
+      player.hand = [tile('万', 2, `pig-${index}`)]
+    })
+    state.players[1].hand = [
+      tile('条', 1, 'ready-1'),
+      tile('条', 1, 'ready-2'),
+      tile('条', 1, 'ready-3'),
+      tile('条', 2, 'ready-4'),
+      tile('条', 3, 'ready-5'),
+      tile('条', 4, 'ready-6'),
+      tile('条', 5, 'ready-7'),
+      tile('条', 6, 'ready-8'),
+      tile('条', 7, 'ready-9'),
+      tile('条', 8, 'ready-10'),
+      tile('条', 8, 'ready-11'),
+      tile('条', 8, 'ready-12'),
+      tile('条', 9, 'ready-13'),
+    ]
+
+    const summary = buildSettlementSummary(state)
+    expect(summary.players[1].finalState).toBe('ready')
+    expect(summary.players[1].readyWaits).toContain('9条')
+    expect(summary.players[1].highestPoints).toBeGreaterThan(0)
+    expect(summary.readyTransfers).toEqual([])
+    expect(summary.readyCheckNote).toContain('花猪')
+  })
+
+  it('已胡玩家的终局状态标记为已胡', () => {
+    const state = finishedState(8)
+    state.players[2].hasWon = true
+
+    const summary = buildSettlementSummary(state)
+    expect(summary.players[2].finalState).toBe('won')
+    expect(summary.players[2].readyWaits).toEqual([])
+    expect(summary.players[2].highestPoints).toBe(0)
   })
 })

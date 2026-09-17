@@ -595,3 +595,17 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 
 /* 胡牌组合里的龙七对 / 双龙七对身份牌 */
 .qidui-badge { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .66rem; font-weight: 800; color: #ffd1ec; background: #f472b622; border: 1px solid #f472b655; }
+
+/* 结算页「查叫关系」终局叫口一览 + 无查叫原因说明 */
+.ready-status-row { display: flex; flex-wrap: wrap; gap: .5rem; margin: .2rem 0 .7rem; }
+.ready-status { display: flex; flex-direction: column; gap: .1rem; min-width: 5.6rem; padding: .4rem .7rem; border: 1px solid #ffffff14; border-radius: 10px; background: #ffffff08; }
+.ready-status b { color: #e7f5f1; font-size: .82rem; }
+.ready-status small { color: #8fada6; font-size: .72rem; }
+.ready-status-won { border-color: #f2c66d88; background: #f2c66d12; }
+.ready-status-won small { color: #f2c66d; }
+.ready-status-ready { border-color: #65e5c188; background: #65e5c112; }
+.ready-status-ready small { color: #65e5c1; }
+.ready-status-notReady { border-color: #ffffff1f; background: #ffffff05; }
+.ready-status-flowerPig { border-color: #f59a9188; background: #f59a9112; }
+.ready-status-flowerPig small { color: #f59a91; }
+.ready-note { margin: 0; padding: .7rem .85rem; border-left: 3px solid #65e5c155; border-radius: 8px; background: #ffffff08; color: #b8d0ca; font-size: .84rem; line-height: 1.6; }

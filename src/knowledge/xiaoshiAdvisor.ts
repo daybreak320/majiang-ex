@@ -1565,8 +1565,8 @@ function matchChoosePairToBreak(ctx: RuleContext): RuleHit | null {
 // 执行器 R-HIGH-DEEP-NO-UP-v0：高张太深就别指望上高张
 // ---------------------------------------------------------------------------
 
-const HIGH_VALUES = [7, 8, 9] as const
-const LOW_VALUES = [1, 2, 3] as const
+const HIGH_VALUES: readonly number[] = [7, 8, 9]
+const LOW_VALUES: readonly number[] = [1, 2, 3]
 /** 开局大家还没打牌，所有牌都「一张未现」——那不是深，是没信息 */
 const HIGH_DEEP_MIN_DISCARDS = 12
 

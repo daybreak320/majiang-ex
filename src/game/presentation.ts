@@ -1,10 +1,11 @@
 import type { ReviewReport } from '../review/types'
+import type { SpecialTrainingKind } from './core'
 import type { GameHistoryEntry, ReviewIssueSample } from './persistence'
 import type { GameCommand, GameEvent, GameState, MeldKind, PlayerId, ScoreReason, TileInstance } from './types'
 import { REVIEW_ALGORITHM_VERSION } from '../review/analyzer'
 import { chooseAICommand, getAIReason } from './ai'
 import { createInitialGame } from './core'
-import type { SpecialTrainingKind } from './core'
+import { analyzeReadyHand, isFlowerPig } from './settlement'
 
 export const PLAYER_NAMES = ['你', '做大做强', '搞死搞残', '先跑为敬'] as const
 
@@ -106,12 +107,18 @@ export function formatAIBehaviorTag(state: GameState, event: GameEvent | undefin
   if (event.type === 'response_chosen' && event.choice.type === 'pass')
     return `【${name}】选择不过度鸣牌，保留手牌弹性。`
   if (event.type === 'tile_discarded') {
-    if (style === 'aggressive') return `【${name}】继续施压，牌路偏向进攻。`
-    if (style === 'efficient') return `【${name}】两面与速度优先，抢先下叫。`
-    if (style === 'steady') return `【${name}】稳住牌效，也在看公开牌河。`
-    if (style === 'qingyise') return `【${name}】同门执念未退，仍在为做大牌铺路。`
-    if (style === 'turtle') return `【${name}】局势收紧，优先给自己留退路。`
-    if (style === 'pengManiac') return `【${name}】保留杠后路线，等能加速的机会。`
+    if (style === 'aggressive')
+      return `【${name}】继续施压，牌路偏向进攻。`
+    if (style === 'efficient')
+      return `【${name}】两面与速度优先，抢先下叫。`
+    if (style === 'steady')
+      return `【${name}】稳住牌效，也在看公开牌河。`
+    if (style === 'qingyise')
+      return `【${name}】同门执念未退，仍在为做大牌铺路。`
+    if (style === 'turtle')
+      return `【${name}】局势收紧，优先给自己留退路。`
+    if (style === 'pengManiac')
+      return `【${name}】保留杠后路线，等能加速的机会。`
   }
   return null
 }
@@ -332,6 +339,12 @@ export interface PlayerSettlementSummary {
   kongCounts: Record<'mingGang' | 'buGang' | 'anGang', number>
   kongIncome: number
   kongExpense: number
+  /** 终局状态：won=已胡；ready=听牌；notReady=未听；flowerPig=花猪（定缺没打完） */
+  finalState: 'won' | 'ready' | 'notReady' | 'flowerPig'
+  /** 听牌时的叫口（如 '5万'），未听为空 */
+  readyWaits: string[]
+  /** 听牌时的最高叫分 */
+  highestPoints: number
 }
 
 export interface SettlementSummary {
@@ -340,6 +353,33 @@ export interface SettlementSummary {
   instantTransfers: Extract<GameEvent, { type: 'score_transferred' }>[]
   finalTransfers: Extract<GameEvent, { type: 'score_transferred' }>[]
   readyTransfers: Extract<GameEvent, { type: 'score_transferred' }>[]
+  /** 无查叫流水时，解释原因（有流水时为空串） */
+  readyCheckNote: string
+}
+
+/** 终局查叫说明：把"为什么没有查叫扣分"讲清楚（未胡几家是否听牌/是否花猪） */
+function buildReadyCheckNote(state: GameState): string {
+  const active = state.players.filter(player => !player.hasWon)
+  if (active.length <= 1)
+    return '只剩 1 家未胡，没有赔付对象，本局不产生查叫。'
+  const pigs = active.filter(isFlowerPig)
+  const readyPlayers = active.filter(player => !isFlowerPig(player) && analyzeReadyHand(player).isReady)
+  if (pigs.length === active.length)
+    return '未胡的几家全是花猪（定缺没打完），花猪既不能收赔、彼此之间也不查叫。'
+  if (readyPlayers.length === 0)
+    return `未胡的 ${active.length} 家都没下叫，没有叫口可收赔——查叫只发生在「有人听牌、有人没听」之间，所以本局没有查叫流水。`
+  const humanPayers = active.filter(player => !isFlowerPig(player) && !analyzeReadyHand(player).isReady)
+  if (humanPayers.length === 0)
+    return '未胡的几家要么已听牌、要么是花猪（花猪走花猪赔付），没有需要另付查叫的对象。'
+  return ''
+}
+
+/** 终局状态标签：用于结算页「查叫关系」的每家一览 */
+export const FINAL_STATE_LABELS: Record<PlayerSettlementSummary['finalState'], string> = {
+  won: '已胡',
+  ready: '听牌',
+  notReady: '未听',
+  flowerPig: '花猪',
 }
 
 export function buildSettlementSummary(state: GameState): SettlementSummary {
@@ -351,7 +391,18 @@ export function buildSettlementSummary(state: GameState): SettlementSummary {
     endReason: state.endReason === 'three_winners' ? '三家已胡，血战结束' : '牌墙已摸完，进入终局结算',
     players: state.players.map((player) => {
       const kongTransfers = transfers.filter(event => event.reason === 'kong')
+      const readyAnalysis = analyzeReadyHand(player)
+      const finalState: PlayerSettlementSummary['finalState'] = player.hasWon
+        ? 'won'
+        : isFlowerPig(player)
+          ? 'flowerPig'
+          : readyAnalysis.isReady
+            ? 'ready'
+            : 'notReady'
       return {
+        finalState,
+        readyWaits: finalState === 'ready' ? readyAnalysis.tiles.map(tile => `${tile.tile.value}${tile.tile.type}`) : [],
+        highestPoints: finalState === 'ready' ? readyAnalysis.highestPoints : 0,
         playerId: player.id,
         score: player.score,
         rank: ordered.findIndex(candidate => candidate.id === player.id) + 1,
@@ -371,6 +422,7 @@ export function buildSettlementSummary(state: GameState): SettlementSummary {
     instantTransfers: transfers.filter(event => event.sequence < settlementStart),
     finalTransfers: transfers.filter(event => event.sequence > settlementStart),
     readyTransfers: transfers.filter(event => event.sequence > settlementStart && event.reason === 'ready_compensation'),
+    readyCheckNote: buildReadyCheckNote(state),
   }
 }
 
@@ -518,13 +570,14 @@ export function recommendTraining(entries: readonly GameHistoryEntry[]): Trainin
   }, { tileEfficiency: 0, strongCombo: 0, attackDefense: 0, meld: 0, dealtIn: 0 })
 
   const top = (Object.entries(counts) as Array<[keyof typeof counts, number]>).sort((a, b) => b[1] - a[1])[0]
-  if (top === undefined || top[1] === 0)
+  if (top === undefined || top[1] === 0) {
     return {
       kind: 'attack-qingyise',
       title: '巩固速度与价值取舍',
       reason: '最近没有重复出现的高优先级问题，先用清一色专项练“保留做大胚子”和“及时下叫”的平衡。',
       evidence: `已参考近 ${scope.length} 局复盘`,
     }
+  }
 
   const [kind, count] = top
   if (kind === 'attackDefense' || kind === 'dealtIn') {
