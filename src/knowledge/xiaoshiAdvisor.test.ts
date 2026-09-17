@@ -1,5 +1,6 @@
 import type { GameState, PlayerId, TileInstance } from '../game/types'
 import type { TileType } from '../types'
+import type { DecisionTheme } from './xiaoshiTypes'
 // 破晓哥镜像导师 · 规则判定通道单测
 import { describe, expect, it } from 'vitest'
 import { chooseAICommand } from '../game/ai'
@@ -9,6 +10,7 @@ import {
   buildXiaoshiAdvice,
   DROP_CALL_MAX_LIVE_WAITS,
   makeQuoteBridge,
+  matchUserAngles,
   MAX_DECISION_ADVICE,
   MAX_OBSERVE_ADVICE,
   relativeDistance,
@@ -806,5 +808,43 @@ describe('makeQuoteBridge：案例花色 vs 当前局主门桥接', () => {
 
   it('金句本身不含具体花色 → 不桥接', () => {
     expect(makeQuoteBridge(pairDown, '万')).toBeNull()
+  })
+})
+
+describe('matchUserAngles：用户视角挂载', () => {
+  const angleA = { id: 'a1', ruleId: 'R-RIVER-INFER-v0', theme: null, text: '下家打 7/9 筒也可能在拆搭，别太武断' }
+  const angleB = { id: 'b1', ruleId: null, theme: '形势与信息' as DecisionTheme, text: '信息少时我更倾向保守' }
+  const angleC = { id: 'c1', ruleId: 'R-OTHER-v0', theme: null, text: '不相关角度' }
+
+  it('ruleId 精确命中（主题不匹配时不串入通用角度）', () => {
+    expect(matchUserAngles('R-RIVER-INFER-v0', '防守与逃跑', [angleA, angleB, angleC])).toEqual([angleA])
+  })
+  it('ruleId 为 null 时按 theme 命中', () => {
+    expect(matchUserAngles('R-RIVER-INFER-v0', '形势与信息', [angleB])).toEqual([angleB])
+  })
+  it('ruleId 为 null 且 theme 不匹配则不命中', () => {
+    expect(matchUserAngles('R-RIVER-INFER-v0', '防守与逃跑', [angleB])).toEqual([])
+  })
+  it('每卡上限 2 条', () => {
+    const many = [1, 2, 3].map(i => ({ id: `m${i}`, ruleId: 'R-RIVER-INFER-v0', theme: null, text: `x${i}` }))
+    expect(matchUserAngles('R-RIVER-INFER-v0', '形势与信息', many)).toHaveLength(2)
+  })
+
+  it('端到端：buildXiaoshiAdvice 把用户角度挂回同类命中', () => {
+    const { state, pool } = emptyGame(801)
+    const discardTiles = take(pool, '7筒 9筒 1万')
+    state.players[1].discards = discardTiles
+    state.players[1].dingque = '条'
+    state.players[3].discards = take(pool, '2万')
+    state.players[0].hand = take(pool, '8筒 9筒')
+    const advice = buildXiaoshiAdvice(state, 0, { userAngles: [angleA, angleB, angleC] })
+    const hit = advice.find(a => a.ruleId === 'R-RIVER-INFER-v0')
+    expect(hit).toBeDefined()
+    expect(hit!.userAngles).toBeDefined()
+    expect(hit!.userAngles!.map(x => x.id)).toContain('a1')
+    // 该规则未设 theme（null），故 ruleId 为 null 的 theme 角度不应挂载
+    expect(hit!.userAngles!.map(x => x.id)).not.toContain('b1')
+    // 不相关角度不应挂载
+    expect(hit!.userAngles!.map(x => x.id)).not.toContain('c1')
   })
 })

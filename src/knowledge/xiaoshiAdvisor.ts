@@ -7,7 +7,7 @@
 
 import type { GameState, Meld, PlayerId, PlayerState, TileInstance } from '../game/types'
 import type { Tile, TileType } from '../types'
-import type { DecisionTheme, XiaoshiRule } from './xiaoshiTypes'
+import type { DecisionTheme, UserAngle, XiaoshiRule } from './xiaoshiTypes'
 import { countOpportunities } from './mahjongTheory'
 import { getXiaoshiRule } from './xiaoshiRules'
 
@@ -58,6 +58,8 @@ export interface XiaoshiAdvice {
   evidence: string[]
   /** 金句与当前局花色不一致时的桥接说明（如案例举条子、当前局是万子）；为 null 不展示 */
   quoteBridge?: string | null
+  /** 用户视角（赛中反馈的不同意见），作为「思考角度」挂回同类局面；无则省略 */
+  userAngles?: UserAngle[]
 }
 
 /** 规则执行器的命中产物：元数据（金句/边界/置信度/主题）从规则库统一取 */
@@ -1999,6 +2001,18 @@ export interface AdviceOptions {
   maxDecision?: number
   /** 观察类上限，默认 MAX_OBSERVE_ADVICE */
   maxObserve?: number
+  /** 用户视角（赛中异议）注入：按 ruleId 精确匹配或 ruleId 为 null 时按 theme 匹配 */
+  userAngles?: UserAngle[]
+}
+
+/**
+ * 把用户视角挂到某条建议上：ruleId 精确匹配优先；
+ * ruleId 为 null 时按 theme 匹配（通用角度作用到该主题全部规则）。每卡上限 2 条，避免堆砌。
+ */
+export function matchUserAngles(ruleId: string, theme: DecisionTheme | null, angles: UserAngle[]): UserAngle[] {
+  return angles.filter(a =>
+    a.ruleId === ruleId || (a.ruleId === null && a.theme !== null && a.theme === theme),
+  ).slice(0, 2)
 }
 
 /**
@@ -2037,6 +2051,7 @@ export function buildXiaoshiAdvice(
     // 金句（案例原话）里的花色若与当前局主门不一致，生成桥接说明，避免「导师在让我选条子」的误读
     const quoteBridge = makeQuoteBridge(rule, hit.mainSuit ?? null)
     const { mainSuit: _drop, ...hitRest } = hit
+    const userAngles = matchUserAngles(ruleId, rule.theme ?? null, options.userAngles ?? [])
     hits.push({
       ruleId,
       ruleName: rule.name,
@@ -2046,6 +2061,7 @@ export function buildXiaoshiAdvice(
       confidence: rule.confidence,
       ...hitRest,
       quoteBridge,
+      ...(userAngles.length > 0 ? { userAngles } : {}),
     })
   }
   const hitIds = new Set(hits.map(h => h.ruleId))

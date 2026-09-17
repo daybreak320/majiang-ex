@@ -118,6 +118,128 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 .xiaoshi-evidence > span, .xiaoshi-boundary > span { display: block; margin-bottom: .3rem; color: #6ee7c4; font-size: .7rem; font-weight: 900; letter-spacing: .05em; }
 .xiaoshi-evidence ul { margin: 0; padding-left: 1.1rem; color: #b6d0c8; font-size: .75rem; line-height: 1.7; }
 .xiaoshi-boundary p { margin: 0; color: #d9b978; font-size: .76rem; line-height: 1.7; }
+
+/* —— 赛中互动：用户思考角度 / 异议讨论（2026-09-17 新增）—— */
+.xiaoshi-angles {
+  margin: .5rem 0 0;
+  padding: .5rem .6rem;
+  border-radius: 10px;
+  border-left: 3px solid #6ee7c4;
+  background: #0c2c27;
+}
+.xiaoshi-angles-label {
+  display: block;
+  margin-bottom: .3rem;
+  color: #6ee7c4;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .05em;
+}
+.xiaoshi-angles ul { margin: 0; padding-left: 1.05rem; color: #cfeede; font-size: .76rem; line-height: 1.7; }
+
+.xiaoshi-dissent-btn {
+  padding: .3rem .6rem;
+  color: #071714;
+  border: 1px solid #6ee7c4;
+  border-radius: 8px;
+  background: #6ee7c4;
+  cursor: pointer;
+  font-size: .74rem;
+  font-weight: 700;
+}
+.xiaoshi-dissent-btn:hover { background: #8ff0db; }
+
+.xiaoshi-composer { margin-top: .55rem; }
+.xiaoshi-composer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: .5rem .6rem;
+  border: 1px solid #2e6b5c;
+  border-radius: 10px;
+  background: #071a17;
+  color: #eafff7;
+  font: inherit;
+  font-size: .78rem;
+  line-height: 1.7;
+  resize: vertical;
+}
+.xiaoshi-composer textarea::placeholder { color: #6f8f87; }
+.xiaoshi-composer-actions { display: flex; gap: .4rem; margin-top: .4rem; }
+.xiaoshi-send {
+  padding: .3rem .7rem;
+  color: #071714;
+  border: 1px solid #6ee7c4;
+  border-radius: 8px;
+  background: #6ee7c4;
+  cursor: pointer;
+  font-size: .74rem;
+  font-weight: 700;
+}
+.xiaoshi-send:disabled { opacity: .45; cursor: not-allowed; }
+.xiaoshi-cancel {
+  padding: .3rem .7rem;
+  color: #c9f8e8;
+  border: 1px solid #327d6c;
+  border-radius: 8px;
+  background: #12332e;
+  cursor: pointer;
+  font-size: .74rem;
+}
+.xiaoshi-composer-hint { margin: .35rem 0 0; color: #7fa59b; font-size: .68rem; }
+
+.xiaoshi-discuss {
+  margin-top: .9rem;
+  padding-top: .7rem;
+  border-top: 1px dashed #2e6b5c;
+}
+.xiaoshi-discuss h4 { margin: 0 0 .5rem; color: #6ee7c4; font-size: .82rem; letter-spacing: .03em; }
+.xiaoshi-discuss-empty { margin: 0; color: #9dc3b8; font-size: .76rem; line-height: 1.7; }
+.xiaoshi-discuss-list { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .5rem; }
+.discuss-item {
+  padding: .55rem .65rem;
+  border: 1px solid #2e6b5c;
+  border-radius: 10px;
+  background: #0d2b26;
+}
+.discuss-item.discuss-accepted { border-color: #6ee7c4; }
+.discuss-item.discuss-kept { border-color: #f2c66d; }
+.discuss-text { margin: 0 0 .35rem; color: #eafff7; font-size: .78rem; line-height: 1.7; }
+.discuss-meta { display: flex; gap: .5rem; align-items: center; margin-bottom: .35rem; }
+.discuss-scope {
+  padding: .06rem .45rem;
+  border-radius: 999px;
+  color: #94b3ab;
+  background: #12332e;
+  border: 1px solid #2e6b5c;
+  font-size: .64rem;
+  font-weight: 800;
+}
+.discuss-status { font-size: .66rem; font-weight: 800; }
+.discuss-status.status-open { color: #9dc3b8; }
+.discuss-status.status-accepted { color: #6ee7c4; }
+.discuss-status.status-kept { color: #f2c66d; }
+.discuss-mentor {
+  margin: 0 0 .4rem;
+  padding: .45rem .55rem;
+  border-radius: 8px;
+  border-left: 3px solid #5eead4;
+  background: #0c2c27;
+  color: #bfe9dc;
+  font-size: .74rem;
+  line-height: 1.7;
+}
+.discuss-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.discuss-actions button {
+  padding: .26rem .55rem;
+  color: #c9f8e8;
+  border: 1px solid #327d6c;
+  border-radius: 8px;
+  background: #12332e;
+  cursor: pointer;
+  font-size: .7rem;
+}
+.discuss-actions button:disabled { opacity: .4; cursor: not-allowed; }
+.xiaoshi-composer-general { margin-top: .2rem; }
 .game-shell { min-height: 100vh; display: flex; flex-direction: column; padding: .6rem 1rem; background: radial-gradient(circle at 50% 40%, #174d43, #071715 65%); }
 .game-topbar { flex: none; max-width: 1440px; width: 100%; margin: 0 auto .6rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; }.game-topbar strong { display: block; margin-top: .25rem; font-size: 1.15rem; }.game-topbar > div:last-child { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }.training-scenario-progress { align-self: flex-start; width: fit-content; margin: -.2rem auto .45rem; padding: .26rem .55rem; color: #bff5e5; border: 1px solid #5eead455; border-radius: 999px; background: #093b32; font-size: .7rem; font-weight: 850; letter-spacing: .04em; }.assistant-toggle { min-height: 36px; display: inline-flex; align-items: center; gap: .45rem; padding: .35rem .65rem; color: #d9eee8; border: 1px solid #ffffff24; border-radius: 8px; background: #ffffff0d; cursor: pointer; font-size: .82rem; font-weight: 800; }
 .strategy-reminder { flex: none; max-width: 1440px; width: 100%; min-height: 72px; display: grid; grid-template-columns: 145px minmax(300px, 1fr) auto; align-items: center; gap: 1rem; margin: 0 auto .6rem; padding: .65rem 1rem; border-block: 1px solid #ffffff20; border-left: 4px solid #38bdf8; background: #061a19e8; }
