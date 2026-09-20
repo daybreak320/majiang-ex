@@ -8,7 +8,7 @@ import type { DecisionTheme } from '../knowledge/xiaoshiTypes'
 // 之后同类局面会多出一个「你的思考角度」；底部「讨论记录」可标状态形成相互成长闭环。
 import { useEffect, useMemo, useState } from 'react'
 import { buildXiaoshiAdvice } from '../knowledge/xiaoshiAdvisor'
-import { XIAOSHI_CASES } from '../knowledge/xiaoshiCases'
+import { ALL_XIAOSHI_CASES } from '../knowledge/xiaoshiKnowledge'
 import {
   addPerspective,
   buildStageTalk,
@@ -102,7 +102,7 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
           </small>
         </div>
         <p>
-          {XIAOSHI_CASES.length}
+          {ALL_XIAOSHI_CASES.length}
           {' '}
           张决策卡 ·
           {XIAOSHI_RULES.length}
