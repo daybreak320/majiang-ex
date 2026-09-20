@@ -1,6 +1,6 @@
 import type { GameState } from '../game/types'
 import type { PerspectiveStatus, UserPerspective } from '../knowledge/xiaoshiDissent'
-import type { DecisionTheme } from '../knowledge/xiaoshiTypes'
+import type { DecisionCase, DecisionTheme } from '../knowledge/xiaoshiTypes'
 // 理由解释面板（UI 层）
 // 与出牌建议并列展示：主线教练给主决策，这里只补经验规则、依据与边界——
 // 命中规则时输出一句话观点 + 理由原话 + 边界条件 + 可核验证据；未命中则保持安静。
@@ -8,7 +8,7 @@ import type { DecisionTheme } from '../knowledge/xiaoshiTypes'
 // 之后同类局面会多出一个「你的思考角度」；底部「讨论记录」可标状态形成相互成长闭环。
 import { useEffect, useMemo, useState } from 'react'
 import { buildXiaoshiAdvice } from '../knowledge/xiaoshiAdvisor'
-import { ALL_XIAOSHI_CASES } from '../knowledge/xiaoshiKnowledge'
+import { ALL_XIAOSHI_CASES, getCasesByTheme } from '../knowledge/xiaoshiKnowledge'
 import {
   addPerspective,
   buildStageTalk,
@@ -53,6 +53,22 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
     setSeenStage(progress.level)
   }
   const advice = useMemo(() => buildXiaoshiAdvice(state, 0, { userAngles: angles }), [state, angles])
+
+  // 每条建议按主题挂「相关实战案例」（合并池 837 卡，含邂逅 621），最多 2 条；
+  // 排除与规则原话完全相同的，避免重复。仅作延伸阅读，不抢主决策。
+  const relatedCases = useMemo(() => {
+    const m = new Map<string, DecisionCase[]>()
+    for (const item of advice) {
+      if (!item.theme)
+        continue
+      const rel = getCasesByTheme(item.theme)
+        .filter(c => (c.reasonQuotes[0] ?? '') !== item.quote)
+        .slice(0, 2)
+      if (rel.length)
+        m.set(item.ruleId, rel)
+    }
+    return m
+  }, [advice])
 
   // 其他入口（如教练卡内联异议）写入后同步重读，避免多面板状态不一致
   useEffect(() => {
@@ -149,6 +165,17 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
                     <span className="xiaoshi-quote-badge">破晓哥原话 · 案例</span>
                     <blockquote>{item.quote}</blockquote>
                     {item.quoteBridge && <p className="xiaoshi-bridge">{item.quoteBridge}</p>}
+                    {(relatedCases.get(item.ruleId) ?? []).map(c => (
+                      <div className="xiaoshi-related" key={c.id}>
+                        <span className="xiaoshi-quote-badge">相关实战案例</span>
+                        <blockquote>{c.reasonQuotes[0]}</blockquote>
+                        {c.source && (
+                          <small style={{ opacity: 0.6, fontSize: '11px' }}>
+                            {c.source.title} · 原片 t={c.source.t}s
+                          </small>
+                        )}
+                      </div>
+                    ))}
                     {item.userAngles && item.userAngles.length > 0 && (
                       <div className="xiaoshi-angles">
                         <span className="xiaoshi-angles-label">你的思考角度</span>
