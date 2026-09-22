@@ -623,3 +623,4 @@ button:focus-visible, [role='button']:focus-visible { outline: 3px solid #5eead4
 /* 被定缺规则挡下的动作按钮：看得见、点不了 */
 .blocked-action { opacity: .55; cursor: not-allowed; border-style: dashed !important; }
 .blocked-action:disabled { color: #b9966a; border-color: #f2c66d55; }
+.blocked-reason { font-size: .78em; opacity: .85; margin-left: .25em; }

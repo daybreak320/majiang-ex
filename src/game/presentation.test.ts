@@ -111,7 +111,7 @@ describe('结算页投影', () => {
     state.events = [
       transfer(1, 1, 0, 2, 'kong'),
       transfer(2, 0, 2, 1, 'kong'),
-      { sequence: 3, type: 'player_won', playerId: 2, info: { tile, fromPlayer: 0, kind: 'discard', baseFan: 1, fan: 1, points: 2, special: [] } },
+      { sequence: 3, type: 'player_won', playerId: 2, info: { tile, fromPlayer: 0, kind: 'discard', baseFan: 1, fan: 1, points: 2, special: [], patterns: [] } },
       { sequence: 4, type: 'final_settlement_started' },
     ]
 

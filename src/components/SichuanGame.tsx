@@ -227,14 +227,16 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
             {actionLabel(action, state)}
           </button>
         ))}
-        {/* 缺门牌对应的碰/杠：按钮照常出现，只是点不了 */}
+        {/* 缺门牌对应的碰/杠：按钮照常出现，只是点不了；明确标注原因，避免误以为"点了没反应" */}
         {blockedActions.map((action, index) => (
           <button
             className="secondary-action blocked-action"
             key={`blocked-${action.type}-${'kind' in action ? action.kind : ''}-${'tileId' in action ? action.tileId : index}`}
             disabled
+            title="这张牌是你定缺的门，川麻规则禁止碰/杠，点不了"
           >
             {actionLabel(action, state)}
+            <span className="blocked-reason">（缺门禁碰）</span>
           </button>
         ))}
         <button className="primary-action" disabled={selectedAction === undefined} onClick={() => selectedAction && submit(selectedAction)}>
