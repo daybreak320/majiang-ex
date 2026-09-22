@@ -21,7 +21,19 @@ export const SPECIAL_WIN_LABELS: Record<SpecialWinKind, string> = {
 }
 
 /** 接受引擎 WinInfo 或结算页投影（winBaseFan/winFan/winSpecial）两种形状 */
-type WinFanLike = { baseFan?: number | null, fan?: number | null, special?: SpecialWinKind[] } | null | undefined
+type WinFanLike = { baseFan?: number | null, fan?: number | null, special?: SpecialWinKind[], patterns?: { id: string, fan: number }[] } | null | undefined
+
+const PATTERNFAN_LABELS: Record<string, string> = {
+  pingHu: '平胡',
+  pengPengHu: '碰碰胡',
+  qingYiSe: '清一色',
+  qiDui: '七对',
+  jinGouDiao: '金钩钓',
+  longQiDui: '龙七对',
+  qingQiDui: '清七对',
+  shuangLongQiDui: '双龙七对',
+  daiGang: '带杠',
+}
 
 /** 番数短标注：用于牌桌玩家面板（如「3番 · 海底捞月 · 封顶」） */
 export function formatWinFanBadge(winInfo: WinFanLike): string {
@@ -44,7 +56,11 @@ export function formatWinFanDetail(winInfo: WinFanLike): string {
   const head = special.includes('selfDraw') ? '自摸' : '点炮胡'
   const extra = adds.length > 0 ? ` + ${adds.join(' + ')}` : ''
   const capNote = fan >= MILESTONE_1_RULES.fanCap ? `（${MILESTONE_1_RULES.fanCap} 番封顶）` : ''
-  return `基础 ${baseFan}${extra} = ${fan}番 · ${head}${capNote}`
+  const patternText = (winInfo?.patterns ?? [])
+    .map(pattern => `${PATTERNFAN_LABELS[pattern.id] ?? pattern.id} ${pattern.fan}`)
+    .join(' + ')
+  const paren = patternText ? `（${patternText}）` : ''
+  return `基础 ${baseFan}${extra} = ${fan}番 · ${head}${capNote}${paren}`
 }
 
 export const AI_STYLE_LABELS = {
@@ -375,6 +391,8 @@ export interface PlayerSettlementSummary {
   winKind: 'selfDraw' | 'discard' | 'robKong' | null
   /** 基础番（不含海底/杠开等特殊加番），未胡为 null */
   winBaseFan: number | null
+  /** 成牌基础番型明细（清一色/碰碰胡/带杠…），未胡为空 */
+  winPatterns: { id: string, fan: number }[]
   /** 特殊加番名目（海底捞月/杠上开花/抢杠胡…），未胡为空 */
   winSpecial: SpecialWinKind[]
   dealtIn: number
@@ -452,6 +470,7 @@ export function buildSettlementSummary(state: GameState): SettlementSummary {
         winFan: player.winInfo?.fan ?? null,
         winKind: player.winInfo?.kind ?? null,
         winBaseFan: player.winInfo?.baseFan ?? null,
+        winPatterns: player.winInfo?.patterns ?? [],
         winSpecial: player.winInfo?.special ?? [],
         dealtIn: state.events.filter(event => event.type === 'player_won' && event.info.fromPlayer === player.id).length,
         kongCounts: {

@@ -360,6 +360,7 @@ function recordWin(state: GameState, playerId: PlayerId, option: HuOption, tile:
     fan: option.score.scoringFan,
     points: option.score.points,
     special: option.special,
+    patterns: option.score.patterns.map(pattern => ({ id: pattern.id, fan: pattern.fan })),
   }
   const player = state.players[playerId]
   player.hasWon = true

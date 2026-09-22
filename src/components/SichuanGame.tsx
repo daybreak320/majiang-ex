@@ -619,7 +619,7 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
               {' '}
               分
             </strong>
-            <p>{player.hasWon ? `已胡 · ${formatWinFanDetail({ baseFan: player.winBaseFan, fan: player.winFan, special: player.winSpecial })}` : '未胡'}</p>
+            <p>{player.hasWon ? `已胡 · ${formatWinFanDetail({ baseFan: player.winBaseFan, fan: player.winFan, special: player.winSpecial, patterns: player.winPatterns })}` : '未胡'}</p>
           </article>
         ))}
       </section>

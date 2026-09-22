@@ -11,6 +11,7 @@ export type FanPatternId
     | 'longQiDui'
     | 'qingQiDui'
     | 'shuangLongQiDui'
+    | 'daiGang'
 
 export interface FanPattern {
   id: FanPatternId
@@ -185,6 +186,9 @@ export function identifyFanPatterns(tiles: readonly TileLike[], options: Winning
     patterns.push({ id: 'qingYiSe', fan: 2 })
   if (melds.length === 4 && tiles.length === 2)
     patterns.push({ id: 'jinGouDiao', fan: 2 })
+  const kongCount = melds.filter(meld => meld.kind === 'mingGang' || meld.kind === 'buGang' || meld.kind === 'anGang').length
+  if (kongCount > 0)
+    patterns.push({ id: 'daiGang', fan: kongCount })
   if (patterns.length === 0)
     patterns.push({ id: 'pingHu', fan: 0 })
   return patterns

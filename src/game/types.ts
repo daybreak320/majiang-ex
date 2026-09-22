@@ -37,6 +37,8 @@ export interface WinInfo {
   fan: number
   points: number
   special: SpecialWinKind[]
+  /** 成牌包含的基础番型明细（清一色/碰碰胡/带杠…），用于结算页展示各番来源 */
+  patterns: { id: string, fan: number }[]
 }
 
 export interface PlayerState {

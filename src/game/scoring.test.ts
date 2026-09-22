@@ -83,7 +83,24 @@ describe('七对与番型', () => {
     expect(calculateScore(qingYiSe)?.baseFan).toBe(2)
   })
 
-  it('四副露单吊将识别金钩钓', () => {
+  it('手里的杠计入番数（带杠加番）', () => {
+    // 清一色（2番）+ 1 个明杠（带杠 +1番） = 3番
+    const hand = tiles('123万 456万 789万 55万')
+    const withMingGang = [meld('mingGang', '444万')]
+    const score = calculateScore(hand, { melds: withMingGang })
+    expect(score?.patterns.map(p => p.id)).toContain('daiGang')
+    expect(score?.patterns.find(p => p.id === 'daiGang')?.fan).toBe(1)
+    expect(score?.baseFan).toBe(3)
+
+    // 带 2 个杠 → 带杠 +2番（清一色 2 + 带杠 2 = 4番）
+    const twoKongs = [meld('mingGang', '444万'), meld('anGang', '222万')]
+    const clearer = tiles('234万 567万 55万')
+    const score2 = calculateScore(clearer, { melds: twoKongs })
+    expect(score2?.baseFan).toBe(4)
+    expect(score2?.patterns.find(p => p.id === 'daiGang')?.fan).toBe(2)
+  })
+
+  it('四副露单吊将识别金钩钓（且带杠加番）', () => {
     const exposed = [
       meld('peng', '111万'),
       meld('peng', '222条'),
@@ -92,7 +109,8 @@ describe('七对与番型', () => {
     ]
     const hand = tiles('55条')
     expect(patternIds(hand, exposed)).toContain('jinGouDiao')
-    expect(calculateScore(hand, { melds: exposed })?.baseFan).toBe(3)
+    // 碰碰胡 1 + 金钩钓 2 + 带杠（2 个杠）2 = 5 番（封顶）
+    expect(calculateScore(hand, { melds: exposed })?.baseFan).toBe(5)
   })
 
   it('接受后续特殊番输入但总番封顶 5', () => {
