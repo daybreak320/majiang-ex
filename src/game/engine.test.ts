@@ -185,6 +185,49 @@ describe('弃牌响应与摸牌', () => {
     expect(executeCommand(state, { type: 'peng', playerId: 1, tileId: discarded.id })).toMatchObject({ ok: false, error: '非法动作' })
   })
 
+  it('人类(做万清)点碰非缺门9万：引擎应当形成碰（复现"碰9万点了没碰上"的反例）', () => {
+    const state = fixture(['99万 1筒 2筒', '9万 1条 2条', '1条 2条 3条', '1条 2条 3条'])
+    state.players[0].dingque = '筒' // 万清：定缺筒，9万是非缺门
+    const discarded = state.players[1].hand.find(t => t.type === '万' && t.value === 9)!
+    state.phase = 'responding'
+    state.responseWindow = {
+      kind: 'discard', sourcePlayer: 1, tile: discarded,
+      eligiblePlayers: [0], choices: {}, resumePlayer: 1,
+      pendingMeldIndex: null, sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+    }
+    expect(getLegalActions(state, 0)).toContainEqual({ type: 'peng', tileId: discarded.id })
+    const res = executeCommand(state, { type: 'peng', playerId: 0, tileId: discarded.id })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    expect(res.nextState.players[0].melds[0]).toMatchObject({ kind: 'peng', fromPlayer: 1 })
+  })
+
+  it('人类点碰但被对手胡压掉：碰被静默丢弃（这是"点了没碰上"的真因之一，需 UI 反馈）', () => {
+    const state = fixture(['99万 1筒 2筒', '9万 1条 2条', '9万 123万 456万 678万 123条', '1条 2条 3条'])
+    state.players[0].dingque = '筒'
+    state.players[2].dingque = '筒'
+    const discarded = state.players[1].hand.find(t => t.type === '万' && t.value === 9)!
+    state.phase = 'responding'
+    state.responseWindow = {
+      kind: 'discard', sourcePlayer: 1, tile: discarded,
+      eligiblePlayers: [0, 2], choices: {}, resumePlayer: 1,
+      pendingMeldIndex: null, sourceEventSequence: 1, isLastTile: false, isKongDiscard: false,
+    }
+    // 人类先点碰
+    let res = executeCommand(state, { type: 'peng', playerId: 0, tileId: discarded.id })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    expect(res.nextState.players[0].melds.some(m => m.kind === 'peng')).toBe(false) // 尚未结算
+    // 对手2 胡同一张
+    const huCmd = action(res.nextState, 2, 'hu') as Extract<GameCommand, { type: 'hu' }>
+    res = executeCommand(res.nextState, { ...huCmd, playerId: 2 })
+    expect(res.ok).toBe(true)
+    if (!res.ok) throw new Error(res.error)
+    // 结算后：对手胡成立，人类的碰被压掉，毫无提示
+    expect(res.nextState.players[2].hasWon).toBe(true)
+    expect(res.nextState.players[0].melds.some(m => m.kind === 'peng')).toBe(false)
+  })
+
   it('明杠由点杠者支付2分并补摸', () => {
     let state = fixture(['5万', '555万', '1万', '2万'])
     const discarded = state.players[0].hand[0]

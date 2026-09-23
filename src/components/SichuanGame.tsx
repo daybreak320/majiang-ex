@@ -155,7 +155,7 @@ function ImmediateTenpaiHint({ candidate }: { candidate: DiscardCandidateAnalysi
   )
 }
 
-function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, blockedActions, legal, submit }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], blockedActions: Extract<LegalAction, { type: 'peng' | 'gang' }>[], legal: LegalAction[], submit: (action: LegalAction) => void }) {
+function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, discardActions, discardIds, otherActions, blockedActions, legal, submit, responseNote, onCloseResponseNote }: { state: GameState, thinking: PlayerId | null, setSelectedTileId: (id: string | null) => void, selectedTileId: string | null, discardActions: Extract<LegalAction, { type: 'discard' }>[], discardIds: Set<string>, otherActions: Exclude<LegalAction, { type: 'discard' | 'dingque' }>[], blockedActions: Extract<LegalAction, { type: 'peng' | 'gang' }>[], legal: LegalAction[], submit: (action: LegalAction) => void, responseNote: string | null, onCloseResponseNote: () => void }) {
   const player = state.players[0]
   // 定缺是否打完（手里还留着缺门牌）——只作状态展示；鸣牌限制只看"这张牌是不是缺门"。
   const dingqueUncleared = hasUnclearedDingque(player)
@@ -211,6 +211,12 @@ function SouthPlayerPanel({ state, thinking, selectedTileId, setSelectedTileId, 
       </div>
       {selectedCandidate !== undefined && <ImmediateTenpaiHint candidate={selectedCandidate} />}
       <div className="action-bar">
+        {responseNote !== null && (
+          <div className="response-note" role="status">
+            <span>{responseNote}</span>
+            <button className="response-note-close" onClick={onCloseResponseNote} aria-label="关闭提示">×</button>
+          </div>
+        )}
         <div className="turn-status">
           {state.phase === 'responding' && legal.length === 0
             ? '等待其他玩家响应…'
@@ -1071,6 +1077,11 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   stateRef.current = state
   pausedRef.current = paused
 
+  // 人类点了碰/杠却可能被对手更高优先级的胡/杠压掉：记录自己的选择，结算时若被压则提示
+  const [responseNote, setResponseNote] = useState<string | null>(null)
+  const selfResponseRef = useRef<{ type: 'peng' | 'gang', label: string } | null>(null)
+  const lastSettledSeqRef = useRef<number>(-1)
+
   const legal = useMemo(() => getLegalActions(state, 0), [state])
   const discardActions = legal.filter((action): action is Extract<LegalAction, { type: 'discard' }> => action.type === 'discard')
   const discardIds = new Set(discardActions.map(action => action.tileId))
@@ -1095,6 +1106,9 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     const stillLegal = getLegalActions(current, 0).some(candidate => JSON.stringify(candidate) === JSON.stringify(action))
     if (!stillLegal)
       return
+    if ((action.type === 'peng' || action.type === 'gang') && current.responseWindow) {
+      selfResponseRef.current = { type: action.type, label: tileLabel(current.responseWindow.tile) }
+    }
     const feedback = action.type === 'discard'
       ? (() => {
           const tile = current.players[0].hand.find(candidate => candidate.id === action.tileId)
@@ -1243,6 +1257,32 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
       }
     }
   }, [paused, seed, skipToResult, state])
+
+  // 人类提交了碰/杠后，若响应窗口被对手更高优先级的胡/杠结算压掉，给出明确提示，
+  // 避免"我点了碰却没碰上"的黑箱体验。
+  useEffect(() => {
+    const settled = [...state.events].reverse().find(event => event.type === 'response_settled')
+    if (settled === undefined || settled.sequence === lastSettledSeqRef.current)
+      return
+    lastSettledSeqRef.current = settled.sequence
+    const self = selfResponseRef.current
+    if (self === null)
+      return
+    const outcome = settled.outcome
+    const actor = settled.actors[0]
+    let overridden = false
+    if (outcome === 'hu' || outcome === 'robbedKong')
+      overridden = !settled.actors.includes(0)
+    else if (outcome === 'gang' || outcome === 'peng')
+      overridden = actor !== 0
+    if (overridden) {
+      const verb = outcome === 'hu' ? '胡' : outcome === 'robbedKong' ? '抢杠胡' : outcome === 'gang' ? '杠' : '碰'
+      const who = actor === 0 ? '你' : PLAYER_NAMES[actor] ?? `玩家${actor}`
+      setResponseNote(`对手 ${who} ${verb}了 ${self.label}，你的${self.type === 'peng' ? '碰' : '杠'}被压（优先级更低）`)
+    }
+    selfResponseRef.current = null
+  }, [state])
+
 
   // 听牌自动弹：一旦有人停听说牌（含跨批次记忆捕捉到的对手听牌）且用户未手动关闭过，自动开启叫口推演看板。
   useEffect(() => {
@@ -1465,6 +1505,8 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
                   blockedActions={blockedActions}
                   legal={legal}
                   submit={submit}
+                  responseNote={responseNote}
+                  onCloseResponseNote={() => setResponseNote(null)}
                 />
               </div>
               {assistantEnabled && (
