@@ -21,6 +21,8 @@ import { recordSpecialTrainingCompleted } from '../utils/playerProfile'
 import { GuessWinPanel } from './GuessWinPanel'
 import { MajiangTile } from './MajiangTile'
 import { MentorDissentInline } from './MentorDissentInline'
+import { STANCE_LABEL } from './MentorDissentInline'
+import { addDistilled, loadPerspectives, markDistilled, type UserPerspective } from '../knowledge/xiaoshiDissent'
 import { MentorGrowthPanel } from './MentorGrowthPanel'
 import { XiaoshiMentorPanel } from './XiaoshiMentorPanel'
 
@@ -351,7 +353,7 @@ function EndgameDefensePanel({ state }: { state: GameState }) {
   )
 }
 
-function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedTileId: string | null }) {
+function AssistantPanel({ state, selectedTileId, gameId = null }: { state: GameState, selectedTileId: string | null, gameId?: string | null }) {
   const analysis = useMemo(() => buildDiscardAssistant(state), [state])
   const [showTheory, setShowTheory] = useState(false)
   const [showCandidates, setShowCandidates] = useState(false)
@@ -374,7 +376,7 @@ function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedT
           练习：
           {displayedLesson?.nextQuestion ?? analysis.coach.practice}
         </small>
-        <MentorDissentInline theme={themeFromCoachMode(analysis.coach.mode)} />
+        <MentorDissentInline theme={themeFromCoachMode(analysis.coach.mode)} gameId={gameId} />
       </section>
       {huLesson !== null && (
         <button
@@ -548,7 +550,39 @@ function AssistantPanel({ state, selectedTileId }: { state: GameState, selectedT
   )
 }
 
-function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onStartTraining }: { state: GameState, history: GameHistoryEntry[], trainingKind?: SpecialTrainingKind, onHome: () => void, onNewGame: () => void, onStartTraining: (kind: SpecialTrainingKind) => void }) {
+function SettlementPage({ state, history, trainingKind, gameId = null, onHome, onNewGame, onStartTraining }: { state: GameState, history: GameHistoryEntry[], trainingKind?: SpecialTrainingKind, gameId?: string | null, onHome: () => void, onNewGame: () => void, onStartTraining: (kind: SpecialTrainingKind) => void }) {
+  // 本局对谈回顾：读出挂在本局的对谈线程，支持一键沉淀为经验卡候选
+  const gameThreads = useMemo<UserPerspective[]>(
+    () => (gameId ? loadPerspectives().filter(p => p.gameId === gameId) : []),
+    [gameId],
+  )
+  const [distilledIds, setDistilledIds] = useState<Set<string>>(() => {
+    const init = new Set<string>()
+    if (gameId) {
+      for (const p of loadPerspectives()) {
+        if (p.gameId === gameId && p.distilled === 'saved')
+          init.add(p.id)
+      }
+    }
+    return init
+  })
+  function distillOne(p: UserPerspective) {
+    if (distilledIds.has(p.id))
+      return
+    const mentorLine = p.mentorLine ?? (p.stance ? STANCE_LABEL[p.stance] : '')
+    const summary = `我的角度：${p.text}\n导师立场：${mentorLine}${p.mentorBasis?.ruleName ? `（依据 ${p.mentorBasis.ruleName}）` : ''}`
+    addDistilled({
+      perspectiveId: p.id,
+      gameId: p.gameId ?? null,
+      title: p.ruleId ?? p.theme ?? '通用角度',
+      summary,
+      ruleId: p.ruleId,
+      theme: p.theme,
+      stance: p.stance ?? null,
+    })
+    markDistilled(p.id, 'saved')
+    setDistilledIds(prev => new Set(prev).add(p.id))
+  }
   const [showAllEvents, setShowAllEvents] = useState(false)
   const [reviewFeedback, setReviewFeedback] = useState<'认可' | '不认可' | null>(null)
   const [selectedRouteSequence, setSelectedRouteSequence] = useState<number | null>(null)
@@ -707,6 +741,36 @@ function SettlementPage({ state, history, trainingKind, onHome, onNewGame, onSta
               </div>
             )}
       </section>
+      <section className="settlement-card xiaoshi-game-review">
+        <h3>本局对谈回顾</h3>
+        {gameThreads.length === 0
+          ? (
+            <p className="muted">
+              这局没提过不同意见。赛中遇到不认同的建议，随时点「我有不同意见」开聊，局末可一键沉淀成你的经验。
+            </p>
+          )
+          : (
+            <ul className="game-review-list">
+              {gameThreads.map(p => (
+                <li key={p.id} className="game-review-item">
+                  <div className="game-review-head">
+                    <span className="discuss-scope">{p.ruleId ?? p.theme ?? '通用'}</span>
+                    <span className={`xiaoshi-stance stance-${p.stance ?? 'partial'}`}>{STANCE_LABEL[p.stance ?? 'partial']}</span>
+                  </div>
+                  <p className="game-review-user">你：{p.text}</p>
+                  {p.mentorLine && <p className="game-review-mentor">导师：{p.mentorLine}</p>}
+                  {distilledIds.has(p.id)
+                    ? <span className="review-saved">✓ 已沉淀为经验</span>
+                    : <button className="xiaoshi-send" onClick={() => distillOne(p)}>沉淀为经验</button>}
+                </li>
+              ))}
+            </ul>
+          )}
+        {distilledIds.size > 0 && (
+          <p className="muted">已沉淀的经验在「理由解释」面板·讨论记录统一管理，标来源=实战对谈，待你人工裁决是否纳入规则库。</p>
+        )}
+      </section>
+
       {trainingReview !== null && (
         <section className="settlement-card special-training-review">
           <span className="eyebrow">本题复盘 · 专项结论</span>
@@ -1053,6 +1117,8 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
   const [state, setState] = useState(() => restoredState ?? (trainingKind === undefined ? createInitialGame(seed, opponentConfigs) : createSpecialTrainingGame(seed, trainingKind, trainingScenarioIndex, true)))
   // 本地牌局种子：随「重新发牌」更新，让顶部 Seed 显示与当前牌局一致
   const [localSeed, setLocalSeed] = useState(seed)
+  /** 本局唯一 id：把赛中异议对谈线程挂到具体一局，便于局末回顾与演进跟评 */
+  const [gameId, setGameId] = useState(() => `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`)
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null)
   const [thinking, setThinking] = useState<PlayerId | null>(null)
   const [thinkingMessage, setThinkingMessage] = useState<string | null>(null)
@@ -1304,7 +1370,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
       historyRef.current = [entry, ...loadGameHistory()]
     }
     clearUnfinishedGame()
-    return <SettlementPage state={state} history={historyRef.current} trainingKind={trainingKind} onHome={onHome} onNewGame={onNewGame} onStartTraining={onStartTraining} />
+    return <SettlementPage state={state} history={historyRef.current} trainingKind={trainingKind} gameId={gameId} onHome={onHome} onNewGame={onNewGame} onStartTraining={onStartTraining} />
   }
 
   const leaveGame = () => {
@@ -1330,6 +1396,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
     setState(next)
     setFamilyMemory(emptyTenpaiMemory())
     setLocalSeed(nextSeed)
+    setGameId(`g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`)
     setError(null)
     setSelectedTileId(null)
     setThinking(null)
@@ -1467,7 +1534,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
             <div className={`game-columns ${endgameActive ? 'endgame-active' : ''} ${xiaoshiEnabled ? 'with-left' : ''} ${assistantEnabled ? 'with-right' : ''}`}>
               {xiaoshiEnabled && (
                 <div className="game-column game-left">
-                  <XiaoshiMentorPanel state={state} />
+                  <XiaoshiMentorPanel state={state} gameId={gameId} />
                 </div>
               )}
               <div className="table-grid">
@@ -1511,7 +1578,7 @@ export function SichuanGame({ seed, restoredState, timedTraining, opponentConfig
               </div>
               {assistantEnabled && (
                 <div className="game-column game-right">
-                  <AssistantPanel state={state} selectedTileId={selectedTileId} />
+                  <AssistantPanel state={state} selectedTileId={selectedTileId} gameId={gameId} />
                 </div>
               )}
             </div>

@@ -1,22 +1,27 @@
 import type { GameState } from '../game/types'
-import type { PerspectiveStatus, UserPerspective } from '../knowledge/xiaoshiDissent'
+import type { LiveBoardContext, UserPerspective } from '../knowledge/xiaoshiDissent'
 import type { DecisionCase, DecisionTheme } from '../knowledge/xiaoshiTypes'
 // 理由解释面板（UI 层）
 // 与出牌建议并列展示：主线教练给主决策，这里只补经验规则、依据与边界——
 // 命中规则时输出一句话观点 + 理由原话 + 边界条件 + 可核验证据；未命中则保持安静。
 // 赛中互动：每张建议可「我有不同意见」开聊，导师把你的角度记进 localStorage，
-// 之后同类局面会多出一个「你的思考角度」；底部「讨论记录」可标状态形成相互成长闭环。
-import { useEffect, useMemo, useState } from 'react'
+// 之后同类局面会多出一个「你的思考角度」；对谈是一条可多轮推进的线程，
+// 导师还会随牌局推进结合新信息主动回看，局末可一键沉淀为经验卡候选。
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildXiaoshiAdvice } from '../knowledge/xiaoshiAdvisor'
 import { ALL_XIAOSHI_CASES, getCasesByTheme } from '../knowledge/xiaoshiKnowledge'
 import {
   addPerspective,
+  addTurn,
   buildStageTalk,
   CHANGE_EVENT,
   computeMentorProgress,
   loadPerspectives,
   loadSeenStage,
   markStageSeen,
+  mentorFollowUp,
+  perspectiveTurns,
+  recordEvolve,
   setPerspectiveStatus,
   toUserAngles,
 } from '../knowledge/xiaoshiDissent'
@@ -29,19 +34,50 @@ const WINDOW_LABEL: Record<'response' | 'discard' | 'any', string> = {
   any: '读牌观察',
 }
 
-const STATUS_LABEL: Record<PerspectiveStatus, string> = {
+const STATUS_LABEL: Record<UserPerspective['status'], string> = {
   open: '待消化',
   accepted: '已纳入',
   kept: '保留异议',
 }
 
-export function XiaoshiMentorPanel({ state }: { state: GameState }) {
+/** 从当前牌面算出实时上下文，喂给本地讨论引擎做「结合新信息」的接招/跟评 */
+function computeLive(state: GameState): LiveBoardContext {
+  const all = state.players.flatMap(p => p.discards)
+  const tileCounts: Record<string, number> = {}
+  for (const t of all) {
+    const k = `${t.value}${t.type}`
+    tileCounts[k] = (tileCounts[k] ?? 0) + 1
+  }
+  const last = all.length > 0 ? all[all.length - 1] : undefined
+  return {
+    tick: state.nextEventSequence,
+    tileCounts,
+    wallLeft: state.wall.length,
+    lastDiscard: last ? `${last.value}${last.type}` : undefined,
+  }
+}
+
+function basisSnippet(basis: UserPerspective['mentorBasis']) {
+  if (!basis)
+    return null
+  return [
+    basis.ruleName ? `依据：${basis.ruleName}` : '',
+    basis.confidence === undefined ? '' : `置信度 ${(basis.confidence * 100).toFixed(0)}%`,
+    basis.evidenceCount === undefined ? '' : `${basis.evidenceCount} 实例`,
+    basis.boundary ? `边界：${basis.boundary}` : '',
+  ].filter(Boolean).join(' · ')
+}
+
+export function XiaoshiMentorPanel({ state, gameId = null }: { state: GameState, gameId?: string | null }) {
   const [perspectives, setPerspectives] = useState<UserPerspective[]>(() => loadPerspectives())
   const [expanded, setExpanded] = useState<string | null>(null)
   const [composerFor, setComposerFor] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [generalDraft, setGeneralDraft] = useState('')
   const [seenStage, setSeenStage] = useState(() => loadSeenStage())
+  const [expandedThread, setExpandedThread] = useState<string | null>(null)
+  const [threadDraft, setThreadDraft] = useState('')
+  const [threadDraftFor, setThreadDraftFor] = useState<string | null>(null)
 
   const angles = useMemo(() => toUserAngles(perspectives), [perspectives])
   const progress = useMemo(() => computeMentorProgress(perspectives), [perspectives])
@@ -79,27 +115,89 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
     return () => window.removeEventListener(CHANGE_EVENT, reload)
   }, [])
 
+  // 演进跟评：随牌局推进，导师对本局已开聊的线程结合新信息主动回看。
+  // 触发条件：有新牌打出（discards 数变化）且线程 evolveCount<2（每线程每局限 2 次）。
+  const lastGameIdRef = useRef<string | null>(null)
+  const lastSeenDiscardsRef = useRef(-1)
+  useEffect(() => {
+    if (!gameId)
+      return
+    // 新局：重置跟评基线，不立即跟评，等下一手牌
+    if (lastGameIdRef.current !== gameId) {
+      lastGameIdRef.current = gameId
+      lastSeenDiscardsRef.current = -1
+      return
+    }
+    const discardCount = state.players.reduce((n, pl) => n + pl.discards.length, 0)
+    if (lastSeenDiscardsRef.current === discardCount)
+      return
+    lastSeenDiscardsRef.current = discardCount
+    const live = computeLive(state)
+    let changed = false
+    for (const p of loadPerspectives()) {
+      if (p.gameId !== gameId)
+        continue
+      if ((p.evolveCount ?? 0) >= 2)
+        continue
+      if (perspectiveTurns(p).length < 2)
+        continue // 用户还没开聊（至少一轮对谈），不主动跟
+      const reply = mentorFollowUp(`结合最新牌面，${live.lastDiscard ?? '有新牌打出'}`, p, live)
+      addTurn(p.id, {
+        role: 'mentor',
+        text: reply.text,
+        ...(reply.basis ? { basis: reply.basis } : {}),
+        atTick: live.tick,
+      })
+      recordEvolve(p.id)
+      changed = true
+    }
+    if (changed)
+      setPerspectives(loadPerspectives())
+  }, [state, gameId])
+
   function submitDissent(ruleId: string, theme: DecisionTheme | null) {
     const text = draft.trim()
     if (!text)
       return
-    const p = addPerspective({ ruleId, theme, text })
+    const p = addPerspective({ ruleId, theme, text, gameId })
     setPerspectives(prev => [...prev, p])
     setDraft('')
     setComposerFor(null)
   }
 
-  function toggleStatus(id: string, status: PerspectiveStatus) {
+  function toggleStatus(id: string, status: UserPerspective['status']) {
     const updated = setPerspectiveStatus(id, status)
     if (updated)
       setPerspectives(prev => prev.map(p => (p.id === id ? updated : p)))
+  }
+
+  function continueThread(id: string) {
+    const p = perspectives.find(x => x.id === id)
+    const text = threadDraft.trim()
+    if (!p || !text)
+      return
+    const live = computeLive(state)
+    addTurn(id, { role: 'user', text })
+    const reply = mentorFollowUp(text, p, live)
+    addTurn(id, {
+      role: 'mentor',
+      text: reply.text,
+      ...(reply.basis ? { basis: reply.basis } : {}),
+    })
+    setThreadDraft('')
+    setThreadDraftFor(null)
+    setPerspectives(loadPerspectives())
+  }
+
+  function toggleThread(id: string) {
+    setExpandedThread(prev => (prev === id ? null : id))
   }
 
   function submitGeneral() {
     const text = generalDraft.trim()
     if (!text)
       return
-    const p = addPerspective({ ruleId: null, theme: null, text })
+    const p = addPerspective({ ruleId: null, theme: null, text, gameId })
     setPerspectives(prev => [...prev, p])
     setGeneralDraft('')
   }
@@ -266,39 +364,65 @@ export function XiaoshiMentorPanel({ state }: { state: GameState }) {
             )
           : (
               <ul className="xiaoshi-discuss-list">
-                {[...perspectives].reverse().map(p => (
-                  <li key={p.id} className={`discuss-item discuss-${p.status}`}>
-                    <p className="discuss-text">{p.text}</p>
-                    <div className="discuss-meta">
-                      <span className="discuss-scope">{p.ruleId ? p.ruleId : p.theme ? p.theme : '通用'}</span>
-                      <span className={`discuss-status status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
-                      <span className={`xiaoshi-stance stance-${p.stance ?? 'partial'}`}>
-                        {STANCE_LABEL[p.stance ?? 'partial']}
-                      </span>
-                    </div>
-                    {p.mentorNote && (
-                      <p className="discuss-mentor">
-                        导师：
-                        {p.mentorNote}
-                      </p>
-                    )}
-                    {p.mentorBasis && (
-                      <p className="discuss-basis">
-                        {[
-                          p.mentorBasis.ruleName ? `依据：${p.mentorBasis.ruleName}` : '',
-                          p.mentorBasis.confidence === undefined ? '' : `置信度 ${(p.mentorBasis.confidence * 100).toFixed(0)}%`,
-                          p.mentorBasis.evidenceCount === undefined ? '' : `${p.mentorBasis.evidenceCount} 个实例`,
-                          p.mentorBasis.boundary ? `边界：${p.mentorBasis.boundary}` : '',
-                        ].filter(Boolean).join(' · ')}
-                      </p>
-                    )}
-                    <div className="discuss-actions">
-                      <button onClick={() => toggleStatus(p.id, 'accepted')} disabled={p.status === 'accepted'}>纳入导师思考</button>
-                      <button onClick={() => toggleStatus(p.id, 'kept')} disabled={p.status === 'kept'}>保留异议</button>
-                      <button onClick={() => toggleStatus(p.id, 'open')} disabled={p.status === 'open'}>重新打开</button>
-                    </div>
-                  </li>
-                ))}
+                {[...perspectives].reverse().map(p => {
+                  const turns = perspectiveTurns(p)
+                  const open = expandedThread === p.id
+                  const scope = p.ruleId ? p.ruleId : p.theme ? p.theme : '通用'
+                  return (
+                    <li key={p.id} className={`discuss-item discuss-${p.status} ${p.distilled ? `distilled-${p.distilled}` : ''}`}>
+                      <button className="discuss-summary" onClick={() => toggleThread(p.id)} aria-expanded={open}>
+                        <span className="discuss-text">{p.text}</span>
+                        <span className="discuss-meta">
+                          <span className="discuss-scope">{scope}</span>
+                          <span className={`discuss-status status-${p.status}`}>{STATUS_LABEL[p.status]}</span>
+                          <span className={`xiaoshi-stance stance-${p.stance ?? 'partial'}`}>
+                            {STANCE_LABEL[p.stance ?? 'partial']}
+                          </span>
+                          {p.gameId && <small className="discuss-game">本局</small>}
+                          {p.evolveCount ? <small className="discuss-evo">跟评 {p.evolveCount}/2</small> : null}
+                          {p.distilled === 'saved' && <small className="discuss-distilled">已沉淀</small>}
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="discuss-thread">
+                          <div className="xiaoshi-bubbles">
+                            {turns.map((t, i) => {
+                              const snip = t.basis && t.role === 'mentor' ? basisSnippet(t.basis) : null
+                              return (
+                                <div className={`xiaoshi-bubble bubble-${t.role}`} key={i}>
+                                  <span className="bubble-role">{t.role === 'user' ? '你' : '导师'}</span>
+                                  <p>{t.text}</p>
+                                  {snip && <small className="bubble-basis">{snip}</small>}
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="xiaoshi-composer xiaoshi-composer-continue">
+                            <textarea
+                              value={threadDraftFor === p.id ? threadDraft : ''}
+                              onChange={(e) => {
+                                setThreadDraftFor(p.id)
+                                setThreadDraft(e.target.value)
+                              }}
+                              placeholder="继续讨论：点具体牌张、问依据或边界，导师接着跟你拆…"
+                              rows={2}
+                            />
+                            <div className="xiaoshi-composer-actions">
+                              <button className="xiaoshi-send" onClick={() => continueThread(p.id)} disabled={!threadDraft.trim()}>
+                                接着说
+                              </button>
+                            </div>
+                          </div>
+                          <div className="discuss-actions">
+                            <button onClick={() => toggleStatus(p.id, 'accepted')} disabled={p.status === 'accepted'}>纳入导师思考</button>
+                            <button onClick={() => toggleStatus(p.id, 'kept')} disabled={p.status === 'kept'}>保留异议</button>
+                            <button onClick={() => toggleStatus(p.id, 'open')} disabled={p.status === 'open'}>重新打开</button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             )}
         <div className="xiaoshi-composer xiaoshi-composer-general">

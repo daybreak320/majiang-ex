@@ -29,7 +29,10 @@ export interface MentorResponse {
   basis?: MentorBasis
 }
 
-/** 一条被导师记住的用户视角（存储结构） */
+/**
+ * 一条被导师记住的用户视角（存储结构）。
+ * 旧 localStorage 数据只有 text/mentorNote，无 turns —— 读取时由 normalizePerspective 补默认空值，向后兼容。
+ */
 export interface UserPerspective {
   id: string
   ruleId: string | null
@@ -37,7 +40,7 @@ export interface UserPerspective {
   text: string
   createdAt: number
   status: PerspectiveStatus
-  /** 导师的诚实回应（模板化，非 LLM 推理），记录讨论轨迹 */
+  /** 导师的诚实回应（模板化，非 LLM 推理），记录讨论轨迹（旧数据单条；新数据同时进 turns） */
   mentorNote?: string
   /** 导师立场：agree/partial/hold——导师也要有自己的不同意见 */
   stance?: MentorStance
@@ -45,6 +48,58 @@ export interface UserPerspective {
   mentorLine?: string
   /** 立场依据（规则名/置信度/边界/原话/证据数） */
   mentorBasis?: MentorBasis
+  /** 多轮对谈轨迹：用户与导师交替发言，含依据与牌局 tick */
+  turns?: DiscussionTurn[]
+  /** 本局归属：同一局内的对谈线程挂同一个 gameId，便于局末回顾与演进跟评 */
+  gameId?: string | null
+  /** 导师随牌局推进主动回看（结合新信息）的次数，每线程每局上限 2 次 */
+  evolveCount?: number
+  /** 经验沉淀状态：pending=待沉淀 / saved=已存为经验卡候选 / dismissed=放弃 */
+  distilled?: DistillStatus | null
+}
+
+/** 对谈一轮：用户或导师的发言 */
+export interface DiscussionTurn {
+  role: 'user' | 'mentor'
+  text: string
+  /** 导师发言可带依据 */
+  basis?: MentorBasis
+  /** 该轮发生时的牌局 tick（结合新信息用） */
+  atTick?: number
+}
+
+/** 经验沉淀状态 */
+export type DistillStatus = 'pending' | 'saved' | 'dismissed'
+
+/** 实时牌面上下文（UI 在每次状态变化时计算后传入讨论引擎，可选） */
+export interface LiveBoardContext {
+  /** 牌局 tick（每摸/打/响应 +1），用于「结合新信息」 */
+  tick: number
+  /** 某牌已现张数，key = '9万' 等；来自弃牌堆 + 已亮明杠刻 */
+  tileCounts?: Record<string, number>
+  /** 牌墙剩余张数 */
+  wallLeft?: number
+  /** 最近一次被打出的牌（用于「刚刚发生」的跟评），如 '9万' */
+  lastDiscard?: string
+}
+
+/** 从实战对谈沉淀出的经验卡候选（不入规则库，待人工裁决） */
+export interface DistilledExperience {
+  id: string
+  /** 来源对谈 id */
+  perspectiveId: string
+  /** 本局归属 */
+  gameId: string | null
+  /** 经验标题（用户提炼或自动摘取） */
+  title: string
+  /** 对谈精华：用户角度 + 导师立场的对照 */
+  summary: string
+  createdAt: number
+  ruleId: string | null
+  theme: DecisionTheme | null
+  stance: MentorStance | null
+  /** 用户是否采纳为经验（采纳后进入「我的经验」，不采纳仅留痕） */
+  accepted: boolean
 }
 
 const STORAGE_KEY = 'xiaoshi:user-perspectives'
@@ -69,6 +124,29 @@ function isValidPerspective(x: unknown): x is UserPerspective {
   return typeof p.id === 'string' && typeof p.text === 'string'
 }
 
+/** 旧 localStorage 数据补默认空值，保证新字段（turns/gameId/evolveCount/distilled）永远存在 */
+function normalizePerspective(p: UserPerspective): UserPerspective {
+  return {
+    ...p,
+    turns: p.turns ?? [],
+    gameId: p.gameId ?? null,
+    evolveCount: p.evolveCount ?? 0,
+    distilled: p.distilled ?? null,
+  }
+}
+
+/** 取得一条视角的对谈轨迹：新数据用 turns，旧 localStorage（无 turns）回退到 text/mentorNote */
+export function perspectiveTurns(p: UserPerspective): DiscussionTurn[] {
+  if (p.turns && p.turns.length > 0)
+    return p.turns
+  return [
+    { role: 'user', text: p.text },
+    ...(p.mentorNote
+      ? [{ role: 'mentor' as const, text: p.mentorNote, ...(p.mentorBasis ? { basis: p.mentorBasis } : {}) }]
+      : []),
+  ]
+}
+
 /** 读取全部用户视角（解析失败/空/非数组均降级为空数组） */
 export function loadPerspectives(): UserPerspective[] {
   const s = safeStorage()
@@ -81,7 +159,7 @@ export function loadPerspectives(): UserPerspective[] {
     const arr = JSON.parse(raw)
     if (!Array.isArray(arr))
       return []
-    return arr.filter(isValidPerspective)
+    return arr.filter(isValidPerspective).map(normalizePerspective)
   }
   catch {
     return []
@@ -201,9 +279,13 @@ export interface NewPerspective {
   text: string
   /** 可选自定义导师回应；省略则自动生成 */
   mentorNote?: string
+  /** 本局归属（对谈线程挂到具体一局，便于局末回顾与演进跟评） */
+  gameId?: string | null
+  /** 开局 tick，记入首轮时间戳 */
+  atTick?: number
 }
 
-/** 新增一条用户视角并落盘，返回完整对象 */
+/** 新增一条用户视角并落盘，返回完整对象（含首轮对谈 turns） */
 export function addPerspective(input: NewPerspective): UserPerspective {
   const text = input.text.trim()
   // 自定义回应（测试/迁移用）走兜底；否则按规则硬证据生成有立场的回应
@@ -221,6 +303,14 @@ export function addPerspective(input: NewPerspective): UserPerspective {
     stance: resp.stance,
     mentorLine: resp.line,
     ...(resp.basis ? { mentorBasis: resp.basis } : {}),
+    // 首轮：用户原话 + 导师首回应，组成可演进的对谈线程
+    turns: [
+      { role: 'user', text, ...(input.atTick !== undefined ? { atTick: input.atTick } : {}) },
+      { role: 'mentor', text: resp.text, ...(resp.basis ? { basis: resp.basis } : {}), ...(input.atTick !== undefined ? { atTick: input.atTick } : {}) },
+    ],
+    gameId: input.gameId ?? null,
+    evolveCount: 0,
+    distilled: null,
   }
   const list = loadPerspectives()
   list.push(item)
@@ -251,6 +341,205 @@ export function toUserAngles(list: UserPerspective[]): UserAngle[] {
     ...(p.stance ? { stance: p.stance } : {}),
     ...(p.mentorLine ? { mentorLine: p.mentorLine } : {}),
   }))
+}
+
+/* ───────────────────────── 对谈线程 · 多轮演进 ─────────────────────────
+ * 异议不再是「提交即收起」的一锤子买卖：每条视角是一条可多轮推进的对谈线程，
+ * 导师随牌局推进结合新信息主动回看（recordEvolve，每线程每局上限 2 次），
+ * 局末可由用户一键沉淀为经验卡候选（见下方 distill 存储）。
+ */
+
+/** 给某条对谈线程追加一轮（user 或 mentor），落盘并重读广播 */
+export function addTurn(perspectiveId: string, turn: DiscussionTurn): UserPerspective | null {
+  const list = loadPerspectives()
+  const idx = list.findIndex(p => p.id === perspectiveId)
+  if (idx < 0)
+    return null
+  const updated: UserPerspective = { ...list[idx], turns: [...(list[idx].turns ?? []), turn] }
+  list[idx] = updated
+  savePerspectives(list)
+  emitChange()
+  return updated
+}
+
+/** 记录导师一次「结合新信息」的主动回看（跟评），evolveCount+1 */
+export function recordEvolve(perspectiveId: string): UserPerspective | null {
+  const list = loadPerspectives()
+  const idx = list.findIndex(p => p.id === perspectiveId)
+  if (idx < 0)
+    return null
+  const updated: UserPerspective = { ...list[idx], evolveCount: (list[idx].evolveCount ?? 0) + 1 }
+  list[idx] = updated
+  savePerspectives(list)
+  emitChange()
+  return updated
+}
+
+/** 把一条对谈线程归属到具体一局（开局时调用） */
+export function setGameId(perspectiveId: string, gameId: string | null): UserPerspective | null {
+  const list = loadPerspectives()
+  const idx = list.findIndex(p => p.id === perspectiveId)
+  if (idx < 0)
+    return null
+  const updated: UserPerspective = { ...list[idx], gameId }
+  list[idx] = updated
+  savePerspectives(list)
+  emitChange()
+  return updated
+}
+
+/* ───────────────────────── 经验沉淀 · 局末回顾 ─────────────────────────
+ * 每局收束时，用户可把本局对谈一键沉淀为「经验卡候选」——
+ * 标来源=实战对谈、入 xiaoshi:distilled-experiences，不进规则库，待人工裁决。
+ */
+
+const DISTILLED_KEY = 'xiaoshi:distilled-experiences'
+
+/** 读取全部沉淀经验（解析失败/非数组降级空数组） */
+export function loadDistilled(): DistilledExperience[] {
+  const s = safeStorage()
+  if (s === null)
+    return []
+  const raw = s.getItem(DISTILLED_KEY)
+  if (!raw)
+    return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr))
+      return []
+    return arr.filter((x: unknown): x is DistilledExperience => {
+      if (x === null || typeof x !== 'object')
+        return false
+      const d = x as Record<string, unknown>
+      return typeof d.id === 'string' && typeof d.summary === 'string'
+    })
+  }
+  catch {
+    return []
+  }
+}
+
+/** 覆盖写入沉淀经验（隐私模式静默降级） */
+export function saveDistilled(list: DistilledExperience[]): void {
+  const s = safeStorage()
+  if (s === null)
+    return
+  try {
+    s.setItem(DISTILLED_KEY, JSON.stringify(list))
+  }
+  catch {
+    // 忽略写入失败，不阻断对局
+  }
+}
+
+/** 新增一条沉淀经验，返回完整对象 */
+export function addDistilled(
+  input: Omit<DistilledExperience, 'id' | 'createdAt' | 'accepted'> & { accepted?: boolean },
+): DistilledExperience {
+  const item: DistilledExperience = {
+    id: makeId(),
+    createdAt: Date.now(),
+    accepted: input.accepted ?? false,
+    ...input,
+  }
+  const list = loadDistilled()
+  list.push(item)
+  saveDistilled(list)
+  return item
+}
+
+/** 切换某条沉淀经验的采纳状态（采纳=进入「我的经验」；不采纳仅留痕） */
+export function setDistilledAccepted(id: string, accepted: boolean): DistilledExperience | null {
+  const list = loadDistilled()
+  const idx = list.findIndex(d => d.id === id)
+  if (idx < 0)
+    return null
+  list[idx] = { ...list[idx], accepted }
+  saveDistilled(list)
+  return list[idx]
+}
+
+/** 标记某条对谈线程的沉淀状态（pending=待沉淀 / saved=已存经验 / dismissed=放弃） */
+export function markDistilled(perspectiveId: string, status: DistillStatus): UserPerspective | null {
+  const list = loadPerspectives()
+  const idx = list.findIndex(p => p.id === perspectiveId)
+  if (idx < 0)
+    return null
+  const updated: UserPerspective = { ...list[idx], distilled: status }
+  list[idx] = updated
+  savePerspectives(list)
+  emitChange()
+  return updated
+}
+
+/* ───────────────────────── 本地讨论引擎 · 确定性接招 ─────────────────────────
+ * 导师对用户后续发言的接招：不接 LLM、不假装推理，按确定性规则分类回应。
+ * 三类主路径：提牌张 / 要依据 / 问边界；其余兜底承接。
+ * 传入 live 牌面时，提牌张类给出现张数与牌墙剩余——真正「结合新信息」继续讨论。
+ */
+
+export function mentorFollowUp(
+  userText: string,
+  perspective: UserPerspective,
+  live?: LiveBoardContext,
+): { text: string, basis?: MentorBasis } {
+  const t = userText.trim()
+
+  // 1) 提牌张：匹配 1-9 万筒条 或 字牌
+  const tile = t.match(/[1-9][万筒条]|[东南西北中发白]/)?.[0]
+  if (tile) {
+    if (live?.tileCounts && live.tileCounts[tile] !== undefined) {
+      const shown = live.tileCounts[tile]
+      const wall = live.wallLeft !== undefined ? `牌墙还余 ${live.wallLeft} 张` : ''
+      return {
+        text: `你点到的 ${tile} 是个具体信号——目前场上已现 ${shown} 张，${wall}。它越稀缺越值得盯：结合你想要的牌型，看这张是帮你进张还是卡你听。`,
+      }
+    }
+    return {
+      text: `你点到的 ${tile} 是个具体信号。把它摆进你的牌型里算一遍：是帮你进张还是卡你听？等下一手牌打出来，我拿实时现张数再跟你回。`,
+    }
+  }
+
+  // 2) 要依据
+  if (/凭什么|凭啥|依据|为什么|道理|证据|理由|咋判断/.test(t)) {
+    const b = perspective.mentorBasis
+    if (b) {
+      const parts = [
+        b.ruleName ? `依据来自「${b.ruleName}」` : '',
+        b.confidence !== undefined ? `置信度 ${(b.confidence * 100).toFixed(0)}%` : '',
+        b.evidenceCount !== undefined ? `${b.evidenceCount} 个实战实例支撑` : '',
+        b.rationale ? `破晓哥原话：「${b.rationale}」` : '',
+      ].filter(Boolean)
+      return {
+        text: `我的依据摆给你：${parts.join('；')}。你要是不服，举一个反例——只要有一手牌它不成立，我就记下来跟你一起改。`,
+        basis: b,
+      }
+    }
+    return {
+      text: `这条我没绑到具体规则，拿不出对等硬依据，只能记为通用角度。你有具体反例就甩给我，咱们对。`,
+    }
+  }
+
+  // 3) 问边界
+  if (/边界|什么时候不成立|什么情况|例外|不成立|反过来|反过来赢/.test(t)) {
+    const b = perspective.mentorBasis
+    if (b?.boundary) {
+      return {
+        text: `边界在这：「${b.boundary}」。落在边界外你的角度就成立、我采纳；还在边界里我仍按原话给判断。把那手牌摊开，咱们看它站在哪一边。`,
+        basis: b,
+      }
+    }
+    return {
+      text: `这条规则没标边界，等于「多数情况都适用」。你若想到一个它不成立的局面，正好补成边界——说说看？`,
+    }
+  }
+
+  // 4) 默认承接：复述立场、邀请摊牌；若刚有牌打出则点出"新信息"
+  const stanceLine = perspective.mentorLine ? `我方立场：${perspective.mentorLine}。` : ''
+  const evoHint = live?.lastDiscard ? `刚打出的 ${live.lastDiscard} 是个新信息——` : ''
+  return {
+    text: `${evoHint}${stanceLine}你说具体点：把那手牌的牌面摊开（谁打了什么、你手里什么），我拿实时现张和你的牌型陪你逐张对。你给反例，我记。`,
+  }
 }
 
 /* ───────────────────────── 导师段位 · 阶段性进阶讨论 ─────────────────────────
