@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState } from 'react'
+import { exportPracticeData } from '../utils/exportPractice'
 
 interface SettingsPanelProps {
   isOpen: boolean
@@ -21,6 +22,7 @@ export function SettingsPanel({
   onResetStats,
 }: SettingsPanelProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'game'>('general')
+  const [exportMsg, setExportMsg] = useState<string | null>(null)
 
   const difficulties = [
     { id: 'easy' as const, name: '简单', desc: '显示提示信息', icon: '🌱' },
@@ -127,19 +129,31 @@ export function SettingsPanel({
                         </div>
                       </div>
 
-                      {/* 重置统计 */}
-                      {onResetStats && (
-                        <div className="p-4 bg-white/5 rounded-xl">
-                          <div className="text-white font-medium mb-2">数据管理</div>
-                          <div className="text-sm text-gray-400 mb-3">重置所有练习统计和积分数据</div>
+                      {/* 数据管理 */}
+                      <div className="p-4 bg-white/5 rounded-xl">
+                        <div className="text-white font-medium mb-2">数据管理</div>
+                        <div className="text-sm text-gray-400 mb-3">导出实战数据给导师做复盘，或重置本地统计</div>
+                        <button
+                          className="w-full px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-colors border border-emerald-500/30 mb-2"
+                          onClick={() => {
+                            const { summary } = exportPracticeData()
+                            setExportMsg(`已导出 ${summary.presentCount}/${summary.keyCount} 类数据（${summary.totalBytes} 字节），文件已下载到「下载」目录，并已复制到剪贴板。`)
+                          }}
+                        >
+                          导出实战数据
+                        </button>
+                        {exportMsg && (
+                          <div className="text-xs text-emerald-300/90 mb-3 leading-relaxed">{exportMsg}</div>
+                        )}
+                        {onResetStats && (
                           <button
                             className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors border border-red-500/30"
                             onClick={onResetStats}
                           >
                             重置统计数据
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )
                 : (
