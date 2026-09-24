@@ -70,7 +70,7 @@ function createPlayer(id: PlayerId, aiStyle: AIStyle | null, displayName?: strin
   }
 }
 
-export type SpecialTrainingKind = 'attack-qingyise' | 'attack-jingoudiao' | 'defense-big-hands' | 'defense-race-qingyise' | 'endgame-count' | 'endgame-qingyise-tenpai'
+export type SpecialTrainingKind = 'attack-qingyise' | 'attack-jingoudiao' | 'defense-big-hands' | 'defense-race-qingyise' | 'endgame-count' | 'endgame-qingyise-tenpai' | 'attack-keepcombo' | 'defense-latediscard'
 
 /** 最后十张专用题库：500 局内每局编号对应一张确定且不同的残局。 */
 export const ENDGAME_COUNT_LIBRARY_SIZE = 500
@@ -83,6 +83,60 @@ const WIDE_TENPAI_LIBRARY_SEED = 0x71E0A110
 /** 金钩钓按编号生成百局独立的公开扣张残局。 */
 export const JINGOUDIAO_LIBRARY_SIZE = 100
 const JINGOUDIAO_LIBRARY_SEED = 0x4A1C0DE0
+
+interface FocusedTrainingScenario {
+  hand: string
+  rivers: readonly [string, string, string]
+  meld?: { player: 1 | 2 | 3, kind: 'peng', tiles: string, fromPlayer: PlayerId }
+  title: string
+  goal: string
+}
+
+const FOCUSED_TRAINING_SCENARIOS: Record<'attack-keepcombo' | 'defense-latediscard', readonly FocusedTrainingScenario[]> = {
+  'attack-keepcombo': [
+    {
+      title: '中张两面 · 别拆有效搭子',
+      goal: '未听牌时优先打孤张；保留 2-8、3-7 这类多接口搭子，先看拆掉会少几张进张。',
+      hand: '23456789万 1479条 56筒',
+      rivers: ['19条', '19筒', '19万'],
+    },
+    {
+      title: '边张组合 · 不为追组合拆搭',
+      goal: '手里有更孤立的牌时，不要先打 7/8；先保留能接多种来牌的 2-7、3-8 组合。',
+      hand: '23456789条 128万 669筒',
+      rivers: ['19筒', '19万', '19条'],
+    },
+    {
+      title: '牌效优先 · 组合变化要量化',
+      goal: '组合变化不是免费收益；每次想拆搭，先比较有效进张，少两张以上就停手。',
+      hand: '23456789筒 137万 559条',
+      rivers: ['19万', '19条', '19筒'],
+    },
+  ],
+  'defense-latediscard': [
+    {
+      title: '尾盘生张 · 先弃熟张',
+      goal: '牌墙进入尾盘后，优先打桌上已经出现过的安全张，不为继续做牌冲生张。',
+      hand: '12345678万 119条 356筒',
+      rivers: ['19万', '19筒', '19条'],
+      meld: { player: 1, kind: 'peng', tiles: '777条', fromPlayer: 2 },
+    },
+    {
+      title: '对手副露 · 不冲中张生张',
+      goal: '对手已有副露且牌墙变短时，打熟张或安全张；没有安全依据的中张先别碰。',
+      hand: '23456789条 113万 588筒',
+      rivers: ['19条', '19万', '19筒'],
+      meld: { player: 1, kind: 'peng', tiles: '333万', fromPlayer: 2 },
+    },
+    {
+      title: '最后退路 · 宁可拆搭',
+      goal: '后盘手牌仍有搭子时，先保命再求快；能打已现牌，就不要打没现过的危险牌。',
+      hand: '3456789筒 124万 6688条',
+      rivers: ['19筒', '19条', '19万'],
+      meld: { player: 1, kind: 'peng', tiles: '777条', fromPlayer: 2 },
+    },
+  ],
+}
 
 function getLibrarySeed(index: number, librarySize: number, baseSeed: number): number {
   const normalized = ((index % librarySize) + librarySize) % librarySize
@@ -207,6 +261,8 @@ export function getSpecialTrainingScenarioCount(kind: SpecialTrainingKind): numb
     return ENDGAME_COUNT_LIBRARY_SIZE
   if (kind === 'attack-jingoudiao')
     return JINGOUDIAO_LIBRARY_SIZE
+  if (kind === 'attack-keepcombo' || kind === 'defense-latediscard')
+    return FOCUSED_TRAINING_SCENARIOS[kind].length
   return 3
 }
 
@@ -214,6 +270,8 @@ export const SPECIAL_TRAINING_META: Record<SpecialTrainingKind, { title: string,
   'attack-qingyise': { title: '进攻 · 三家缺万宽床决策', summary: '从三家对手都清完万门的第一巡起步；你持万门宽床，按手牌基础、后续上牌与对手推进，选择清一色、七对自摸、普通自摸或素胡兑现。' },
   'endgame-qingyise-tenpai': { title: '残局 · 下宽叫', summary: '清一色与杠开两类残局轮换出现；同样能下叫时，练习选出叫口更多、活张更宽的一打。' },
   'attack-jingoudiao': { title: '残局 · 金钩钓换听', summary: '四副碰牌已成，摸进两张候选后只留一张单吊；每次换听都比较真正还活的牌，直到胡牌。' },
+  'attack-keepcombo': { title: '进攻 · 强组合保留', summary: '未听牌时识别多面进张搭子；先打孤张，不为组合变化牺牲有效牌效。' },
+  'defense-latediscard': { title: '防守 · 尾盘弃安全张', summary: '牌墙进入尾盘且对手副露后，练习拆搭弃熟张，不冲没有安全依据的生张。' },
   'defense-big-hands': { title: '防守 · 三家做大', summary: '三家公开结构快速推进，练习不喂牌、降速与止损。' },
   'defense-race-qingyise': { title: '攻防 · 争做清一色', summary: '你与对手同门集中，练习抢速度或果断转防。' },
   'endgame-count': { title: '残局 · 最后十张算牌', summary: '牌墙压到十张，公开牌密集，练习精确扣张、叫口与安全牌。' },
@@ -473,6 +531,46 @@ function createRandomJingoudiaoTraining(seed: number, styles: readonly AIStyle[]
   }
 }
 
+function createFocusedTraining(seed: number, kind: 'attack-keepcombo' | 'defense-latediscard', scenarioIndex: number, styles: readonly AIStyle[]): GameState {
+  const scenario = FOCUSED_TRAINING_SCENARIOS[kind][scenarioIndex % FOCUSED_TRAINING_SCENARIOS[kind].length]
+  const pool = shuffleTiles(createTileSet(), createSeededRandom(seed))
+  const players: [PlayerState, PlayerState, PlayerState, PlayerState] = [
+    createPlayer(0, null),
+    createPlayer(1, styles[0]),
+    createPlayer(2, styles[1]),
+    createPlayer(3, styles[2]),
+  ]
+  players[0].hand = dealTrainingHand(pool, scenario.hand)
+  players[0].dingque = recommendDingque(players[0].hand)
+  for (const [index, river] of scenario.rivers.entries())
+    players[(index + 1) as 1 | 2 | 3].discards = dealTrainingRiver(pool, river)
+  if (scenario.meld) {
+    const { player, kind: meldKind, tiles, fromPlayer } = scenario.meld
+    setTrainingMeld(players[player], pool, meldKind, tiles, fromPlayer)
+  }
+  for (const playerId of [1, 2, 3] as const) {
+    players[playerId].hand = sortTiles(pool.splice(0, 13))
+    players[playerId].dingque = recommendDingque(players[playerId].hand)
+  }
+  return {
+    rulesVersion: MILESTONE_1_RULES.version,
+    seed,
+    phase: 'discarding',
+    players,
+    wall: pool,
+    dealer: 0,
+    currentPlayer: 0,
+    lastDrawnTileId: players[0].hand[players[0].hand.length - 1]?.id ?? null,
+    lastDrawWasReplacement: false,
+    lastDrawWasLastTile: false,
+    responseWindow: null,
+    kongContext: null,
+    endReason: null,
+    nextEventSequence: 1,
+    events: [],
+  }
+}
+
 function createRandomEndgameCountTraining(seed: number, styles: readonly AIStyle[]): GameState {
   const random = createSeededRandom(seed)
   const pool = shuffleTiles(createTileSet(), random)
@@ -537,6 +635,13 @@ export function createSpecialTrainingGame(seed: number, kind: SpecialTrainingKin
     const librarySeed = getJingoudiaoLibrarySeed(libraryIndex)
     const libraryStyles = shuffleValues<AIStyle>(['aggressive', 'steady', 'efficient'], createSeededRandom(librarySeed))
     return createRandomJingoudiaoTraining(librarySeed, libraryStyles)
+  }
+  if (kind === 'attack-keepcombo' || kind === 'defense-latediscard') {
+    const focusedScenarios = FOCUSED_TRAINING_SCENARIOS[kind]
+    const focusedIndex = scenarioIndex === undefined ? Math.abs(seed) % focusedScenarios.length : Math.abs(scenarioIndex) % focusedScenarios.length
+    const focusedSeed = (0xF0C05EED + focusedIndex * 104729 + (kind === 'defense-latediscard' ? 0x10000 : 0)) >>> 0
+    const focusedStyles = shuffleValues<AIStyle>(['aggressive', 'steady', 'efficient'], createSeededRandom(focusedSeed))
+    return createFocusedTraining(focusedSeed, kind, focusedIndex, focusedStyles)
   }
   const players: [PlayerState, PlayerState, PlayerState, PlayerState] = [
     createPlayer(0, null),

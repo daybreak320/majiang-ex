@@ -16,6 +16,8 @@ type Page = 'home' | 'game' | 'library'
 const SPECIAL_TRAINING_VISUALS: Record<SpecialTrainingKind, { icon: string, category: string, color: string }> = {
   'attack-qingyise': { icon: '🛏️', category: '进攻决策', color: 'from-sky-500 to-blue-500' },
   'attack-jingoudiao': { icon: '🎣', category: '残局换听', color: 'from-violet-500 to-fuchsia-500' },
+  'attack-keepcombo': { icon: '🧩', category: '牌效进攻', color: 'from-blue-500 to-cyan-500' },
+  'defense-latediscard': { icon: '🧱', category: '尾盘防守', color: 'from-rose-500 to-orange-500' },
   'defense-big-hands': { icon: '🛡️', category: '防守训练', color: 'from-rose-500 to-red-500' },
   'defense-race-qingyise': { icon: '⚔️', category: '攻防对抗', color: 'from-orange-500 to-amber-500' },
   'endgame-count': { icon: '🧮', category: '残局算牌', color: 'from-emerald-500 to-teal-500' },

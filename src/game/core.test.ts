@@ -87,8 +87,28 @@ describe('牌组与开局', () => {
     expect(getSpecialTrainingScenarioCount('attack-jingoudiao')).toBe(100)
     expect(getSpecialTrainingScenarioCount('endgame-qingyise-tenpai')).toBe(100)
     expect(getSpecialTrainingScenarioCount('endgame-count')).toBe(500)
+    expect(getSpecialTrainingScenarioCount('attack-keepcombo')).toBe(3)
+    expect(getSpecialTrainingScenarioCount('defense-latediscard')).toBe(3)
     for (const kind of ['defense-big-hands', 'defense-race-qingyise'] as const)
       expect(getSpecialTrainingScenarioCount(kind)).toBe(3)
+  })
+
+  it('保搭与尾盘防守专项生成完整且唯一的牌实体', () => {
+    for (const kind of ['attack-keepcombo', 'defense-latediscard'] as const) {
+      for (let index = 0; index < getSpecialTrainingScenarioCount(kind); index++) {
+        const game = createSpecialTrainingGame(88, kind, index)
+        const ids = [...game.wall, ...game.players.flatMap(player => [
+          ...player.hand,
+          ...player.discards,
+          ...player.melds.flatMap(meld => meld.tiles),
+        ])].map(tile => tile.id)
+        expect(game.phase).toBe('discarding')
+        expect(game.players[0].hand, `${kind}#${index}`).toHaveLength(14)
+        expect(ids).toHaveLength(108)
+        expect(new Set(ids)).toHaveLength(108)
+        expect(getLegalActions(game, 0).some(action => action.type === 'discard')).toBe(true)
+      }
+    }
   })
 
   it('清一色听牌题库按编号提供100个独立残局，且每题都保留十张牌墙', () => {

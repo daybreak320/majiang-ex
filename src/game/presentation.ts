@@ -368,6 +368,8 @@ export function buildSpecialTrainingReview(state: GameState, kind: SpecialTraini
   const objectives: Record<Exclude<SpecialTrainingKind, 'endgame-count'>, string> = {
     'attack-qingyise': '宽床决策：在清一色收益、普通自摸速度与转和退路之间取舍。',
     'attack-jingoudiao': '金钩钓换听：四副碰牌后，按真实余张选择更活的单吊。',
+    'attack-keepcombo': '强组合保留：未听牌时先打孤张，保住多面进张搭子，不为组合变化拆掉牌效。',
+    'defense-latediscard': '尾盘弃安全张：对手副露、牌墙变短时，宁可拆搭弃熟张，不冲没有安全依据的生张。',
     'defense-big-hands': '三家做大：识别公开副露后降速，不给对手喂关键牌。',
     'defense-race-qingyise': '同门竞速：比较自己速度与对手公开推进，决定抢跑或转防。',
     'endgame-qingyise-tenpai': '下宽叫：同样能下叫时，优先选择真正活张更多的听口。',
