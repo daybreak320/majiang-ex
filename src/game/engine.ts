@@ -135,6 +135,7 @@ function selfDrawOption(state: GameState, playerId: PlayerId): HuOption | null {
   const score = calculateScore(player.hand, {
     melds: player.melds,
     dingque: player.dingque,
+    winningTile: state.lastDrawnTileId === null ? undefined : player.hand.find(tile => tile.id === state.lastDrawnTileId),
     specialFan: special.length,
   })
   return score === null ? null : { score, special }
@@ -152,6 +153,7 @@ function responseHuOption(state: GameState, playerId: PlayerId, window: Response
   const score = calculateScore([...player.hand, window.tile], {
     melds: player.melds,
     dingque: player.dingque,
+    winningTile: window.tile,
     specialFan: special.length,
   })
   if (score === null || (player.passedWinValue !== null && score.points <= player.passedWinValue))

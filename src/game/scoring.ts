@@ -12,6 +12,7 @@ export type FanPatternId
     | 'qingQiDui'
     | 'shuangLongQiDui'
     | 'daiGang'
+    | 'gangHu'
 
 export interface FanPattern {
   id: FanPatternId
@@ -21,6 +22,7 @@ export interface FanPattern {
 export interface WinningOptions {
   melds?: readonly Meld[]
   dingque?: TileType | null
+  winningTile?: TileLike
 }
 
 export interface ScoreOptions extends WinningOptions {
@@ -154,6 +156,12 @@ function isPengPengHu(tiles: readonly TileLike[], melds: readonly Meld[]): boole
   return isStandardShape(tiles, melds.length, true)
 }
 
+function isWinningTileCompletingKong(tiles: readonly TileLike[], winningTile: TileLike | undefined): boolean {
+  if (winningTile === undefined)
+    return false
+  return tiles.filter(tile => tile.type === winningTile.type && tile.value === winningTile.value).length === 4
+}
+
 export function identifyFanPatterns(tiles: readonly TileLike[], options: WinningOptions = {}): FanPattern[] {
   const melds = options.melds ?? []
   if (!isWinningHand(tiles, options))
@@ -176,6 +184,8 @@ export function identifyFanPatterns(tiles: readonly TileLike[], options: Winning
     else {
       patterns.push({ id: 'qiDui', fan: 2 })
     }
+    if (isWinningTileCompletingKong(tiles, options.winningTile))
+      patterns.push({ id: 'gangHu', fan: 1 })
     return patterns
   }
 
@@ -189,6 +199,8 @@ export function identifyFanPatterns(tiles: readonly TileLike[], options: Winning
   const kongCount = melds.filter(meld => meld.kind === 'mingGang' || meld.kind === 'buGang' || meld.kind === 'anGang').length
   if (kongCount > 0)
     patterns.push({ id: 'daiGang', fan: kongCount })
+  if (isWinningTileCompletingKong(tiles, options.winningTile))
+    patterns.push({ id: 'gangHu', fan: 1 })
   if (patterns.length === 0)
     patterns.push({ id: 'pingHu', fan: 0 })
   return patterns

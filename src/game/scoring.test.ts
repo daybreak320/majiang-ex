@@ -83,6 +83,19 @@ describe('七对与番型', () => {
     expect(calculateScore(qingYiSe)?.baseFan).toBe(2)
   })
 
+  it('胡牌张与手里三张同牌组成杠，计成杠胡加番', () => {
+    const hand = tiles('1111万 22万 33条 44条 55筒 66筒')
+    const winningTile = hand[3]
+    const score = calculateScore(hand, { winningTile })
+    expect(score?.patterns).toContainEqual({ id: 'gangHu', fan: 1 })
+    expect(score?.baseFan).toBe(4)
+
+    const differentWinningTile = hand[4]
+    const withoutGangHu = calculateScore(hand, { winningTile: differentWinningTile })
+    expect(withoutGangHu?.patterns.some(pattern => pattern.id === 'gangHu')).toBe(false)
+    expect(withoutGangHu?.baseFan).toBe(3)
+  })
+
   it('手里的杠计入番数（带杠加番）', () => {
     // 清一色（2番）+ 1 个明杠（带杠 +1番） = 3番
     const hand = tiles('123万 456万 789万 55万')

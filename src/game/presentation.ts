@@ -33,6 +33,7 @@ const PATTERNFAN_LABELS: Record<string, string> = {
   qingQiDui: '清七对',
   shuangLongQiDui: '双龙七对',
   daiGang: '带杠',
+  gangHu: '成杠胡',
 }
 
 /** 番数短标注：用于牌桌玩家面板（如「3番 · 海底捞月 · 封顶」） */
